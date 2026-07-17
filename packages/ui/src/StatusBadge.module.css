@@ -1,0 +1,14 @@
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.success { background: #d8f3dc; color: #1b4332; }
+.warning { background: #fff3cd; color: #664d03; }
+.error { background: #f8d7da; color: #842029; }
+.info { background: #cfe2ff; color: #084298; }
+.neutral { background: #e9ecef; color: #495057; }

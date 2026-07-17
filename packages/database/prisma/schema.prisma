@@ -1,0 +1,824 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SYSTEM_ADMIN
+  CHIEF_DOCTOR
+  ORTHOPEDIC_MANAGER
+  SURGEON
+  ORTHOPEDIST
+  CONSULTING_DOCTOR
+  DENTAL_TECHNICIAN
+  ASSISTANT
+  RADIOLOGY_OPERATOR
+  AUDITOR
+}
+
+enum Sex {
+  MALE
+  FEMALE
+  UNSPECIFIED
+}
+
+enum PatientSource {
+  LOCAL
+  STOMA1C
+  IMPORT
+}
+
+enum JawScope {
+  UPPER
+  LOWER
+  BOTH
+}
+
+enum CaseStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum ParticipantRole {
+  CONSULTING_DOCTOR
+  ORTHOPEDIST
+  SURGEON
+  DENTAL_TECHNICIAN
+}
+
+enum ProtocolVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum OwnerRole {
+  ORTHOPEDIST
+  SURGEON
+  CHIEF_DOCTOR
+  QUALITY_MANAGER
+}
+
+enum StageInstanceStatus {
+  NOT_STARTED
+  DRAFT
+  UPLOADING
+  PROCESSING
+  REVIEW_REQUIRED
+  RESHOOT_REQUIRED
+  READY_FOR_CONFIRMATION
+  CONFIRMED
+  CLOSED
+  REOPENED
+  BLOCKED
+}
+
+enum MediaType {
+  PHOTO
+  VIDEO
+  DOCUMENT
+  RADIOLOGY_IMAGE
+  RADIOLOGY_STUDY
+  DICOM_SERIES
+  STRUCTURED_DATA
+  STRUCTURED_CONFIRMATION
+}
+
+enum MediaAssetStatus {
+  UPLOADED
+  PROCESSING
+  AI_SUGGESTED
+  UNASSIGNED
+  DOCTOR_CONFIRMED
+  SURGEON_CONFIRMED
+  TECHNICALLY_REJECTED
+  REPLACED
+  ADDITIONAL
+  ARCHIVED
+}
+
+enum DerivativeType {
+  THUMBNAIL
+  PREVIEW
+  POSTER
+  WEB_VIDEO
+  AI_SANITIZED_COPY
+  PDF_PREVIEW
+  DICOM_PREVIEW
+}
+
+enum AssignmentSource {
+  AI
+  DOCTOR
+  SURGEON
+}
+
+enum AssignmentStatus {
+  SUGGESTED
+  CONFIRMED
+  REJECTED
+  REPLACED
+}
+
+enum UploadBatchStatus {
+  CREATED
+  UPLOADING
+  PROCESSING
+  COMPLETED
+  FAILED
+  PARTIALLY_FAILED
+}
+
+enum RadiologyStudyType {
+  OPTG
+  CBCT
+  CT
+  OTHER
+}
+
+enum RadiologyStudyStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  REJECTED
+  CONFIRMED
+}
+
+enum ImplantSide {
+  LEFT
+  RIGHT
+  MIDLINE
+  UNKNOWN
+}
+
+enum ImplantRecordStatus {
+  DRAFT
+  DOCUMENTED
+  NEEDS_REVIEW
+  ACCEPTED_BY_SURGEON
+}
+
+enum AttachmentType {
+  CT_CROSS_SECTION
+  CT_AXIAL
+  CT_PANORAMIC_RECONSTRUCTION
+  CT_CORONAL
+  CT_SAGITTAL
+  OPTG_FRAGMENT
+  OTHER
+}
+
+enum OptgStatus {
+  NOT_UPLOADED
+  ACCEPTABLE
+  REPEAT_REQUIRED
+}
+
+enum RegistrationConclusion {
+  ACCEPTABLE_FOR_LAB
+  REPEAT_REQUIRED
+}
+
+enum ReportType {
+  STAGE_REPORT
+  CASE_REPORT
+  SURGICAL_RADIOLOGY_REPORT
+  FULL_PROTOCOL_REPORT
+}
+
+enum ExternalSystem {
+  STOMA1C
+}
+
+enum ExternalEntityType {
+  PATIENT
+  STAFF_MEMBER
+  BRANCH
+  APPOINTMENT
+  MEDICAL_RECORD
+  CLINICAL_CASE
+}
+
+enum SyncStatus {
+  MANUAL
+  SYNCED
+  ERROR
+  CONFLICT
+}
+
+enum IntegrationProvider {
+  STOMA1C
+}
+
+enum IntegrationDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum IntegrationEventStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
+  CONFLICT
+}
+
+model Branch {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  name      String
+  address   String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  staff     StaffMember[]
+  patients  Patient[]
+  cases     ClinicalCase[]
+}
+
+model StaffMember {
+  id             String    @id @default(uuid())
+  lastName       String
+  firstName      String
+  middleName     String?
+  position       String
+  specialization String?
+  branchId       String?
+  branch         Branch?   @relation(fields: [branchId], references: [id])
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User?
+  participations CaseParticipant[]
+}
+
+model User {
+  id            String    @id @default(uuid())
+  staffMemberId String?   @unique
+  staffMember   StaffMember? @relation(fields: [staffMemberId], references: [id])
+  email         String    @unique
+  phone         String?
+  passwordHash  String
+  role          UserRole
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Patient {
+  id                 String        @id @default(uuid())
+  localPatientNumber String        @unique
+  lastName           String
+  firstName          String
+  middleName         String?
+  birthDate          DateTime?     @db.Date
+  sex                Sex           @default(UNSPECIFIED)
+  phone              String?
+  comment            String?
+  branchId           String?
+  branch             Branch?       @relation(fields: [branchId], references: [id])
+  source             PatientSource @default(LOCAL)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  archivedAt         DateTime?
+  cases              ClinicalCase[]
+
+  @@index([lastName, firstName, birthDate])
+  @@index([phone])
+}
+
+model Protocol {
+  id          String            @id @default(uuid())
+  code        String            @unique
+  name        String
+  description String?
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  versions    ProtocolVersion[]
+}
+
+model ProtocolVersion {
+  id              String                @id @default(uuid())
+  protocolId      String
+  protocol        Protocol              @relation(fields: [protocolId], references: [id])
+  version         String
+  status          ProtocolVersionStatus @default(DRAFT)
+  publishedAt     DateTime?
+  createdBy       String
+  createdAt       DateTime              @default(now())
+  stageTemplates  StageTemplate[]
+  mediaRequirements MediaRequirement[]
+  cases           ClinicalCase[]
+  stageInstances  StageInstance[]
+
+  @@unique([protocolId, version])
+}
+
+model StageTemplate {
+  id                               String    @id @default(uuid())
+  protocolVersionId                String
+  protocolVersion                  ProtocolVersion @relation(fields: [protocolVersionId], references: [id])
+  code                             String
+  name                             String
+  description                      String?
+  sortOrder                        Int
+  ownerRole                        OwnerRole
+  dependsOnStageCode               String?
+  startBlockedUntilDependencyClosed Boolean @default(false)
+  closeBlockedUntilDependencyClosed Boolean @default(false)
+  isActive                         Boolean   @default(true)
+  createdAt                        DateTime  @default(now())
+  updatedAt                        DateTime  @updatedAt
+  mediaRequirements                MediaRequirement[]
+  stageInstances                   StageInstance[]
+
+  @@unique([protocolVersionId, code])
+}
+
+model ClinicalCase {
+  id                 String          @id @default(uuid())
+  patientId          String
+  patient            Patient         @relation(fields: [patientId], references: [id])
+  clinicalScenario   String
+  jawScope           JawScope
+  treatmentStartDate DateTime        @db.Date
+  branchId           String?
+  branch             Branch?         @relation(fields: [branchId], references: [id])
+  protocolVersionId  String
+  protocolVersion    ProtocolVersion @relation(fields: [protocolVersionId], references: [id])
+  status             CaseStatus      @default(DRAFT)
+  createdBy          String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  participants       CaseParticipant[]
+  stages             StageInstance[]
+  radiologyStudies   RadiologyStudy[]
+  implants           SurgicalImplantRecord[]
+  reports            GeneratedReport[]
+
+  @@index([patientId])
+  @@index([status])
+}
+
+model CaseParticipant {
+  id              String          @id @default(uuid())
+  clinicalCaseId  String
+  clinicalCase    ClinicalCase    @relation(fields: [clinicalCaseId], references: [id])
+  staffMemberId   String
+  staffMember     StaffMember     @relation(fields: [staffMemberId], references: [id])
+  participantRole ParticipantRole
+  isPrimary       Boolean         @default(true)
+  assignedAt      DateTime        @default(now())
+  assignedBy      String
+  removedAt       DateTime?
+  removalReason   String?
+
+  @@index([clinicalCaseId, participantRole])
+}
+
+model StageInstance {
+  id                    String              @id @default(uuid())
+  clinicalCaseId        String
+  clinicalCase          ClinicalCase        @relation(fields: [clinicalCaseId], references: [id])
+  stageTemplateId       String
+  stageTemplate         StageTemplate       @relation(fields: [stageTemplateId], references: [id])
+  protocolVersionId     String
+  protocolVersion       ProtocolVersion     @relation(fields: [protocolVersionId], references: [id])
+  status                StageInstanceStatus @default(NOT_STARTED)
+  openedAt              DateTime?
+  closedAt              DateTime?
+  restHeightMm          Decimal?            @db.Decimal(8, 2)
+  workingHeightMm       Decimal?            @db.Decimal(8, 2)
+  heightDifferenceMm    Decimal?            @db.Decimal(8, 2)
+  optgStatus            OptgStatus?
+  registrationConclusion RegistrationConclusion?
+  clinicalComment       String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  requirementInstances  RequirementInstance[]
+  mediaAssets           MediaAsset[]
+  uploadBatches         UploadBatch[]
+  radiologyStudies      RadiologyStudy[]
+  implants              SurgicalImplantRecord[]
+  surgeonConfirmation   SurgeonRadiologyConfirmation?
+  doctorConfirmations   DoctorConfirmation[]
+  closures              StageClosure[]
+  emergencyEvents       EmergencyEvent[]
+  reports               GeneratedReport[]
+
+  @@index([clinicalCaseId])
+  @@index([status])
+}
+
+model QualityProfile {
+  id                   String     @id @default(uuid())
+  name                 String
+  mediaType            MediaType
+  minWidth             Int        @default(0)
+  minHeight            Int        @default(0)
+  maxBlurScore         Float?
+  minBrightness        Float?
+  maxBrightness        Float?
+  requireAudio         Boolean?
+  minVideoDurationSec  Float?
+  maxVideoDurationSec  Float?
+  allowedMimeTypes     String[]
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  mediaRequirements    MediaRequirement[]
+}
+
+model MediaRequirement {
+  id                String         @id @default(uuid())
+  protocolVersionId String
+  protocolVersion   ProtocolVersion @relation(fields: [protocolVersionId], references: [id])
+  stageTemplateId   String
+  stageTemplate     StageTemplate  @relation(fields: [stageTemplateId], references: [id])
+  code              String
+  name              String
+  description       String?
+  mediaType         MediaType
+  required          Boolean        @default(true)
+  minCount          Int            @default(1)
+  maxCount          Int?
+  allowMultiple     Boolean        @default(false)
+  sortOrder         Int
+  jawScope          JawScope?
+  viewType          String?
+  patientState      String?
+  instruction       String?
+  referenceAssetId  String?
+  qualityProfileId  String?
+  qualityProfile    QualityProfile? @relation(fields: [qualityProfileId], references: [id])
+  specialRule       String?
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  requirementInstances RequirementInstance[]
+
+  @@unique([stageTemplateId, code])
+}
+
+model RequirementInstance {
+  id                 String           @id @default(uuid())
+  stageInstanceId    String
+  stageInstance      StageInstance    @relation(fields: [stageInstanceId], references: [id])
+  mediaRequirementId String
+  mediaRequirement   MediaRequirement @relation(fields: [mediaRequirementId], references: [id])
+  status             String           @default("PENDING")
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  assignments        MediaAssignment[]
+
+  @@unique([stageInstanceId, mediaRequirementId])
+}
+
+model UploadBatch {
+  id             String            @id @default(uuid())
+  stageInstanceId String
+  stageInstance  StageInstance     @relation(fields: [stageInstanceId], references: [id])
+  uploadedBy     String
+  status         UploadBatchStatus @default(CREATED)
+  totalFiles     Int               @default(0)
+  processedFiles Int               @default(0)
+  failedFiles    Int               @default(0)
+  createdAt      DateTime          @default(now())
+  completedAt    DateTime?
+  chunks         UploadChunk[]
+  mediaAssets    MediaAsset[]
+}
+
+model UploadChunk {
+  id            String    @id @default(uuid())
+  uploadBatchId String
+  uploadBatch   UploadBatch @relation(fields: [uploadBatchId], references: [id])
+  chunkIndex    Int
+  status        String    @default("PENDING")
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@unique([uploadBatchId, chunkIndex])
+}
+
+model MediaAsset {
+  id               String           @id @default(uuid())
+  stageInstanceId  String
+  stageInstance    StageInstance    @relation(fields: [stageInstanceId], references: [id])
+  uploadBatchId    String?
+  uploadBatch      UploadBatch?     @relation(fields: [uploadBatchId], references: [id])
+  originalFileName String
+  storedObjectKey  String
+  mimeType         String
+  mediaType        MediaType
+  fileSizeBytes    BigInt
+  sha256           String
+  perceptualHash   String?
+  status           MediaAssetStatus @default(UPLOADED)
+  uploadedBy       String
+  uploadedAt       DateTime         @default(now())
+  archivedAt       DateTime?
+  blurScore        Float?
+  brightnessScore  Float?
+  qualityPassed    Boolean?
+  hasAudio         Boolean?
+  durationSec      Float?
+  width            Int?
+  height           Int?
+  derivatives      MediaDerivative[]
+  metadata         MediaMetadata?
+  assignments      MediaAssignment[]
+  implantAttachments ImplantRadiologyAttachment[]
+
+  @@index([stageInstanceId])
+  @@index([sha256])
+  @@index([status])
+}
+
+model MediaDerivative {
+  id           String         @id @default(uuid())
+  mediaAssetId String
+  mediaAsset   MediaAsset     @relation(fields: [mediaAssetId], references: [id])
+  type         DerivativeType
+  objectKey    String
+  mimeType     String
+  width        Int?
+  height       Int?
+  durationSec  Float?
+  createdAt    DateTime       @default(now())
+}
+
+model MediaMetadata {
+  id                    String     @id @default(uuid())
+  mediaAssetId          String     @unique
+  mediaAsset            MediaAsset @relation(fields: [mediaAssetId], references: [id])
+  width                 Int?
+  height                Int?
+  durationSec           Float?
+  fps                   Float?
+  hasAudio              Boolean?
+  codec                 String?
+  dicomModality         String?
+  dicomStudyDate        DateTime?
+  dicomSeriesDescription String?
+  exifRemoved           Boolean    @default(false)
+  createdAt             DateTime   @default(now())
+}
+
+model MediaAssignment {
+  id                    String           @id @default(uuid())
+  mediaAssetId          String
+  mediaAsset            MediaAsset       @relation(fields: [mediaAssetId], references: [id])
+  requirementInstanceId String?
+  requirementInstance   RequirementInstance? @relation(fields: [requirementInstanceId], references: [id])
+  requirementCode       String?
+  source                AssignmentSource
+  confidence            Float?
+  status                AssignmentStatus @default(SUGGESTED)
+  confirmedBy           String?
+  confirmedAt           DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([mediaAssetId])
+  @@index([requirementInstanceId])
+}
+
+model RadiologyStudy {
+  id                  String               @id @default(uuid())
+  clinicalCaseId      String
+  clinicalCase        ClinicalCase         @relation(fields: [clinicalCaseId], references: [id])
+  stageInstanceId     String
+  stageInstance       StageInstance        @relation(fields: [stageInstanceId], references: [id])
+  studyType           RadiologyStudyType
+  studyDate           DateTime?
+  uploadedBy          String
+  responsibleDoctorId String?
+  status              RadiologyStudyStatus @default(UPLOADED)
+  mainMediaAssetId    String?
+  dicomSeriesAssetId  String?
+  comment             String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([stageInstanceId])
+}
+
+model ImplantPlacementMethod {
+  id                         String   @id @default(uuid())
+  code                       String   @unique
+  methodNumber               Int
+  submethodCode              String?
+  nameRu                     String
+  nameEn                     String?
+  shortDescription           String?
+  detailedDescription        String?
+  anatomicalRegion           String?
+  jawScope                   JawScope @default(BOTH)
+  requiresOptg               Boolean  @default(false)
+  requiresCbct               Boolean  @default(false)
+  requiresCtSlice            Boolean  @default(true)
+  requiresCorticalTarget     Boolean  @default(false)
+  requiresNerveRelation      Boolean  @default(false)
+  requiresSinusRelation      Boolean  @default(false)
+  requiresNasalFloorRelation Boolean  @default(false)
+  requiresPterygoidRelation  Boolean  @default(false)
+  requiresZygomaticRelation  Boolean  @default(false)
+  isGeneral                  Boolean  @default(false)
+  isActive                   Boolean  @default(true)
+  sortOrder                  Int
+  sourceDocumentName         String   @default("Strategic Implant Methods")
+  sourcePage                 Int?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+}
+
+model SurgicalImplantRecord {
+  id                         String              @id @default(uuid())
+  clinicalCaseId             String
+  clinicalCase               ClinicalCase        @relation(fields: [clinicalCaseId], references: [id])
+  stageInstanceId            String
+  stageInstance              StageInstance       @relation(fields: [stageInstanceId], references: [id])
+  implantNumber              Int
+  implantLabel               String
+  jawScope                   JawScope
+  side                       ImplantSide         @default(UNKNOWN)
+  toothPositionFdi           String?
+  regionDescription          String?
+  implantSystem              String?
+  implantModel               String?
+  implantDiameter            String?
+  implantLength              String?
+  plannedMethodCode          String?
+  actualMethodCode           String
+  actualSubmethodCode        String?
+  primaryCorticalTarget      String?
+  secondaryCorticalTarget    String?
+  implantHeadPositionComment String?
+  surgeonComment             String?
+  status                     ImplantRecordStatus @default(DRAFT)
+  createdBy                  String
+  createdAt                  DateTime            @default(now())
+  updatedAt                  DateTime            @updatedAt
+  radiologyAttachments       ImplantRadiologyAttachment[]
+
+  @@unique([stageInstanceId, implantNumber])
+  @@index([stageInstanceId])
+}
+
+model ImplantRadiologyAttachment {
+  id                       String                @id @default(uuid())
+  surgicalImplantRecordId  String
+  surgicalImplantRecord    SurgicalImplantRecord @relation(fields: [surgicalImplantRecordId], references: [id], onDelete: Cascade)
+  mediaAssetId             String
+  mediaAsset               MediaAsset            @relation(fields: [mediaAssetId], references: [id])
+  attachmentType           AttachmentType
+  isRequired               Boolean               @default(true)
+  surgeonConfirmed         Boolean               @default(false)
+  confirmedBy              String?
+  confirmedAt              DateTime?
+  showsImplantFullLength   Boolean?
+  showsApicalThread        Boolean?
+  showsCorticalEngagement  Boolean?
+  showsNerveRelation       Boolean?
+  showsSinusRelation       Boolean?
+  showsNasalFloorRelation  Boolean?
+  showsPterygoidRelation   Boolean?
+  showsZygomaticRelation   Boolean?
+  comment                  String?
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  @@index([surgicalImplantRecordId])
+}
+
+model SurgeonRadiologyConfirmation {
+  id                           String        @id @default(uuid())
+  stageInstanceId              String        @unique
+  stageInstance                StageInstance @relation(fields: [stageInstanceId], references: [id])
+  surgeonUserId                String
+  confirmedAt                  DateTime      @default(now())
+  confirmationText             String
+  allImplantsDocumented        Boolean
+  optgUploaded                 Boolean
+  cbctUploaded                 Boolean
+  allImplantsHaveCtSlices      Boolean
+  allImplantsHaveMethodSelected Boolean
+  hasImplantsForReview         Boolean       @default(false)
+  comment                      String?
+  snapshotHash                 String
+}
+
+model DoctorConfirmation {
+  id                String        @id @default(uuid())
+  stageInstanceId   String
+  stageInstance     StageInstance @relation(fields: [stageInstanceId], references: [id])
+  doctorUserId      String
+  protocolVersionId String
+  confirmationText  String
+  snapshotHash      String
+  confirmedAt       DateTime      @default(now())
+}
+
+model StageClosure {
+  id                  String        @id @default(uuid())
+  stageInstanceId     String
+  stageInstance       StageInstance @relation(fields: [stageInstanceId], references: [id])
+  closedByUserId      String
+  closedAt            DateTime      @default(now())
+  closureSnapshotHash String
+  comment             String?
+}
+
+model EmergencyEvent {
+  id                String        @id @default(uuid())
+  stageInstanceId   String
+  stageInstance     StageInstance @relation(fields: [stageInstanceId], references: [id])
+  createdBy         String
+  occurredAt        DateTime      @default(now())
+  reason            String
+  clinicalSituation String
+  actionPerformed   String
+  missingMaterials  String
+  comment           String?
+  createdAt         DateTime      @default(now())
+}
+
+model AuditEvent {
+  id              String   @id @default(uuid())
+  actorUserId     String?
+  action          String
+  entityType      String
+  entityId        String
+  clinicalCaseId  String?
+  stageInstanceId String?
+  metadata        Json     @default("{}")
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  @@index([clinicalCaseId])
+  @@index([stageInstanceId])
+  @@index([createdAt])
+  @@index([action])
+}
+
+model GeneratedReport {
+  id              String     @id @default(uuid())
+  clinicalCaseId  String
+  clinicalCase    ClinicalCase @relation(fields: [clinicalCaseId], references: [id])
+  stageInstanceId String?
+  stageInstance   StageInstance? @relation(fields: [stageInstanceId], references: [id])
+  reportType      ReportType
+  objectKey       String
+  generatedBy     String
+  generatedAt     DateTime   @default(now())
+  status          String     @default("READY")
+  sha256          String
+}
+
+model ExternalEntityReference {
+  id                   String             @id @default(uuid())
+  system               ExternalSystem     @default(STOMA1C)
+  entityType           ExternalEntityType
+  internalEntityType   String
+  internalEntityId     String
+  externalEntityId     String
+  externalDatabaseId   String?
+  externalPresentation String?
+  syncStatus           SyncStatus         @default(MANUAL)
+  lastSyncedAt         DateTime?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@unique([system, entityType, externalDatabaseId, externalEntityId])
+  @@index([internalEntityType, internalEntityId])
+}
+
+model IntegrationEvent {
+  id                      String                 @id @default(uuid())
+  provider                IntegrationProvider    @default(STOMA1C)
+  direction               IntegrationDirection
+  eventType               String
+  entityType              String
+  entityId                String?
+  externalEntityId        String?
+  idempotencyKey          String                 @unique
+  status                  IntegrationEventStatus @default(PENDING)
+  requestPayloadRedacted  Json                   @default("{}")
+  responsePayloadRedacted Json                   @default("{}")
+  errorMessage            String?
+  attempts                Int                    @default(0)
+  nextRetryAt             DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+
+  @@index([status, nextRetryAt])
+}

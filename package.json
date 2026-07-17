@@ -1,0 +1,35 @@
+{
+  "name": "mandarin-photoprotocol",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mandarin Strategic Implant PhotoProtocol — клинический quality gate для Strategic Implant® / Corticobasal®",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:unit": "turbo run test --filter=@mandarin/domain --filter=@mandarin/api",
+    "test:integration": "turbo run test:integration --filter=@mandarin/api",
+    "test:e2e": "turbo run test:e2e --filter=@mandarin/web",
+    "db:generate": "npm run generate -w @mandarin/database",
+    "db:migrate": "npm run migrate -w @mandarin/database",
+    "db:seed": "npm run seed -w @mandarin/database",
+    "db:reset": "npm run reset -w @mandarin/database",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "npm@10.9.2",
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  }
+}

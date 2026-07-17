@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --color-graphite: #2c2f33;
+  --color-accent: #e85d04;
+  --color-accent-hover: #d35400;
+  --color-accent-light: #fef3ec;
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f9fafb;
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+  --color-success: #15803d;
+  --color-warning: #b45309;
+  --color-error: #b91c1c;
+  --color-info: #1d4ed8;
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--color-bg);
+    color: var(--color-graphite);
+    font-family: Inter, 'Segoe UI', system-ui, sans-serif;
+    min-height: 100%;
+  }
+
+  a {
+    color: var(--color-accent);
+  }
+
+  a:hover {
+    color: var(--color-accent-hover);
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded border border-accent bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-hover disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded border border-border-strong bg-white px-4 py-2 text-sm font-medium text-graphite transition hover:bg-surface-muted disabled:opacity-50;
+  }
+
+  .card {
+    @apply rounded border border-border bg-white p-5 shadow-sm;
+  }
+
+  .input-field {
+    @apply w-full rounded border border-border px-3 py-2 text-sm text-graphite focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent;
+  }
+
+  .label-field {
+    @apply mb-1 block text-sm font-medium text-graphite;
+  }
+
+  .table-wrap {
+    @apply overflow-x-auto rounded border border-border bg-white;
+  }
+
+  .data-table {
+    @apply w-full text-left text-sm;
+  }
+
+  .data-table th {
+    @apply border-b border-border bg-surface-muted px-4 py-3 font-medium text-graphite;
+  }
+
+  .data-table td {
+    @apply border-b border-border px-4 py-3 text-graphite;
+  }
+
+  .badge-muted {
+    @apply inline-flex rounded bg-surface-muted px-2 py-0.5 text-xs font-medium text-gray-600;
+  }
+}

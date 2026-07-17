@@ -1,0 +1,30 @@
+{
+  "name": "@mandarin/worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo lint-worker-ok"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.830.0",
+    "@mandarin/config": "*",
+    "@mandarin/database": "*",
+    "@mandarin/file-processing": "*",
+    "@mandarin/yandex-ai": "*",
+    "@prisma/client": "^6.10.1",
+    "bullmq": "^5.53.2",
+    "ioredis": "^5.6.1",
+    "pdfkit": "^0.17.1",
+    "sharp": "^0.34.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@types/pdfkit": "^0.13.9",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}
