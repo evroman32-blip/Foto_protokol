@@ -13,8 +13,9 @@ function patientName(p: ClinicalCaseDto['patient']) {
 }
 
 function CaseRow({ c }: { c: ClinicalCaseDto }) {
-  const warnings = c.stageInstances.flatMap((s) => s.completeness?.warnings ?? []);
-  const blockers = c.stageInstances.flatMap((s) => s.completeness?.blockingReasons ?? []);
+  const stages = c.stageInstances ?? [];
+  const warnings = stages.flatMap((s) => s.completeness?.warnings ?? []);
+  const blockers = stages.flatMap((s) => s.completeness?.blockingReasons ?? []);
   const hasIssues = warnings.length > 0 || blockers.length > 0;
 
   return (

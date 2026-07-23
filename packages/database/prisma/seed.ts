@@ -14,19 +14,18 @@ const STAGE_DEFS: Array<{
   dependsOn?: StageCode;
   startBlocked?: boolean;
   closeBlocked?: boolean;
-  stub?: boolean;
 }> = [
   { code: StageCode.PRE_OPERATION, name: 'Предоперационный этап', sortOrder: 1, ownerRole: OwnerRole.ORTHOPEDIST },
   { code: StageCode.POSTOP_SURGICAL_RADIOLOGY_CONTROL, name: 'Послеоперационный хирургический и рентгенологический контроль', sortOrder: 2, ownerRole: OwnerRole.SURGEON },
-  { code: StageCode.IMPRESSIONS_OR_SCANS, name: 'Оттиски / сканы', sortOrder: 3, ownerRole: OwnerRole.ORTHOPEDIST, stub: true },
+  { code: StageCode.IMPRESSIONS_OR_SCANS, name: 'Оттиски / сканы', sortOrder: 3, ownerRole: OwnerRole.ORTHOPEDIST },
   { code: StageCode.JAW_RELATION, name: 'Межчелюстные соотношения', sortOrder: 4, ownerRole: OwnerRole.ORTHOPEDIST, dependsOn: StageCode.POSTOP_SURGICAL_RADIOLOGY_CONTROL, startBlocked: true, closeBlocked: true },
   { code: StageCode.FIRST_PROTOTYPE, name: 'Первый прототип', sortOrder: 5, ownerRole: OwnerRole.ORTHOPEDIST },
-  { code: StageCode.LONG_TERM_PROTOTYPE_FIXATION, name: 'Долгосрочная фиксация прототипа', sortOrder: 6, ownerRole: OwnerRole.ORTHOPEDIST, stub: true },
-  { code: StageCode.CONTROL_1_3_WEEKS, name: 'Контроль 1–3 недели', sortOrder: 7, ownerRole: OwnerRole.ORTHOPEDIST, stub: true },
-  { code: StageCode.FINAL_PROSTHESIS_TRYIN, name: 'Примерка финальной конструкции', sortOrder: 8, ownerRole: OwnerRole.ORTHOPEDIST, stub: true },
+  { code: StageCode.LONG_TERM_PROTOTYPE_FIXATION, name: 'Долгосрочная фиксация прототипа', sortOrder: 6, ownerRole: OwnerRole.ORTHOPEDIST },
+  { code: StageCode.CONTROL_1_3_WEEKS, name: 'Контроль 1–3 недели', sortOrder: 7, ownerRole: OwnerRole.ORTHOPEDIST },
+  { code: StageCode.FINAL_PROSTHESIS_TRYIN, name: 'Примерка финальной конструкции', sortOrder: 8, ownerRole: OwnerRole.ORTHOPEDIST },
   { code: StageCode.FINAL_FIXATION, name: 'Финальная фиксация', sortOrder: 9, ownerRole: OwnerRole.ORTHOPEDIST },
-  { code: StageCode.POST_FINAL_CONTROL, name: 'Контроль после финальной фиксации', sortOrder: 10, ownerRole: OwnerRole.ORTHOPEDIST, stub: true },
-  { code: StageCode.CORRECTIONS_REMAKES_COMPLICATIONS, name: 'Коррекции / переделки / осложнения', sortOrder: 11, ownerRole: OwnerRole.ORTHOPEDIST, stub: true },
+  { code: StageCode.POST_FINAL_CONTROL, name: 'Контроль после финальной фиксации', sortOrder: 10, ownerRole: OwnerRole.ORTHOPEDIST },
+  { code: StageCode.CORRECTIONS_REMAKES_COMPLICATIONS, name: 'Коррекции / переделки / осложнения', sortOrder: 11, ownerRole: OwnerRole.ORTHOPEDIST },
 ];
 
 const IMPLANT_METHODS = [
@@ -176,11 +175,11 @@ function finalFixationRequirements(): ReqDef[] {
     ['FF_PROFILE_LEFT', 'Профиль слева'],
     ['FF_POSITION_12', 'Позиция 12'],
     ['FF_POSITION_6', 'Позиция 6'],
-    ['FF_INTRAORAL_FRONT', 'Инtraoral фронтально'],
-    ['FF_INTRAORAL_RIGHT', 'Инtraoral справа'],
-    ['FF_INTRAORAL_LEFT', 'Инtraoral слева'],
-    ['FF_OCCLUSAL_UPPER', 'Окclusal верх'],
-    ['FF_OCCLUSAL_LOWER', 'Окclusal низ'],
+    ['FF_INTRAORAL_FRONT', 'Интраорально фронтально'],
+    ['FF_INTRAORAL_RIGHT', 'Интраорально справа'],
+    ['FF_INTRAORAL_LEFT', 'Интраорально слева'],
+    ['FF_OCCLUSAL_UPPER', 'Окклюзия верх'],
+    ['FF_OCCLUSAL_LOWER', 'Окклюзия низ'],
     ['FF_SOFT_TISSUES', 'Мягкие ткани'],
     ['FF_HYGIENE_SPACES', 'Гигиенические промежутки'],
     ['FF_IMPLANT_ACCESS', 'Доступ к имплантатам'],
@@ -198,12 +197,230 @@ function finalFixationRequirements(): ReqDef[] {
   }));
 }
 
+function photoPositions(
+  prefix: string,
+  codes: Array<[string, string]>,
+  opts?: { includeAdditional?: boolean },
+): ReqDef[] {
+  const list = codes.map(([suffix, name], i) => ({
+    code: `${prefix}_${suffix}`,
+    name,
+    mediaType: MediaType.PHOTO,
+    required: true,
+    minCount: 1,
+    sortOrder: i + 1,
+    qualityProfileName: 'photo-standard',
+  }));
+  if (opts?.includeAdditional !== false) {
+    list.push({
+      code: `${prefix}_ADDITIONAL_MEDIA`,
+      name: 'Дополнительные материалы',
+      mediaType: MediaType.PHOTO,
+      required: false,
+      minCount: 0,
+      sortOrder: list.length + 1,
+      qualityProfileName: 'photo-standard',
+    });
+  }
+  return list;
+}
+
+function impressionsRequirements(): ReqDef[] {
+  return [
+    {
+      code: 'IMP_SCAN_UPPER',
+      name: 'Скан / STL верхней челюсти',
+      mediaType: MediaType.STL,
+      sortOrder: 1,
+    },
+    {
+      code: 'IMP_SCAN_LOWER',
+      name: 'Скан / STL нижней челюсти',
+      mediaType: MediaType.STL,
+      sortOrder: 2,
+    },
+    {
+      code: 'IMP_SCAN_BITE',
+      name: 'Скан / STL в прикусе',
+      mediaType: MediaType.STL,
+      required: false,
+      minCount: 0,
+      sortOrder: 3,
+    },
+    {
+      code: 'IMP_PHOTO_IMPRESSIONS',
+      name: 'Фото оттисков',
+      mediaType: MediaType.PHOTO,
+      sortOrder: 4,
+      qualityProfileName: 'photo-standard',
+    },
+    {
+      code: 'IMP_ADDITIONAL_MEDIA',
+      name: 'Дополнительные материалы',
+      mediaType: MediaType.PHOTO,
+      required: false,
+      minCount: 0,
+      sortOrder: 5,
+      qualityProfileName: 'photo-standard',
+    },
+  ];
+}
+
+function longTermPrototypeRequirements(): ReqDef[] {
+  return [
+    ...photoPositions('LTP', [
+      ['FACE_FRONT_REST', 'Лицо анфас покой'],
+      ['FACE_FRONT_SMILE', 'Лицо анфас улыбка'],
+      ['INTRAORAL_FRONT', 'Интраорально фронтально'],
+      ['INTRAORAL_RIGHT', 'Интраорально справа'],
+      ['INTRAORAL_LEFT', 'Интраорально слева'],
+      ['OCCLUSAL_UPPER', 'Окклюзия верх'],
+      ['OCCLUSAL_LOWER', 'Окклюзия низ'],
+      ['SOFT_TISSUES', 'Мягкие ткани'],
+      ['FIT', 'Посадка / фиксация'],
+    ]),
+    {
+      code: 'LTP_VIDEO_SPEECH',
+      name: 'Речь и фонетика',
+      mediaType: MediaType.VIDEO,
+      required: false,
+      minCount: 0,
+      sortOrder: 20,
+      qualityProfileName: 'video-speech',
+    },
+  ];
+}
+
+function control1To3WeeksRequirements(): ReqDef[] {
+  return [
+    ...photoPositions('C13', [
+      ['FACE_FRONT_REST', 'Лицо анфас покой'],
+      ['FACE_FRONT_SMILE', 'Лицо анфас улыбка'],
+      ['INTRAORAL_FRONT', 'Интраорально фронтально'],
+      ['INTRAORAL_RIGHT', 'Интраорально справа'],
+      ['INTRAORAL_LEFT', 'Интраорально слева'],
+      ['SOFT_TISSUES', 'Мягкие ткани'],
+      ['HYGIENE', 'Гигиена / состояние тканей'],
+    ]),
+    {
+      code: 'C13_OPTG',
+      name: 'Контрольное ОПТГ',
+      mediaType: MediaType.RADIOLOGY_IMAGE,
+      sortOrder: 20,
+    },
+  ];
+}
+
+function finalTryinRequirements(): ReqDef[] {
+  return [
+    ...photoPositions('TRYIN', [
+      ['FIT', 'Посадка'],
+      ['MIDLINE', 'Средняя линия'],
+      ['SYMMETRY', 'Симметрия'],
+      ['SMILE_LINE', 'Линия улыбки'],
+      ['LIP_SUPPORT', 'Поддержка губ'],
+      ['INTRAORAL_FRONT', 'Интраорально фронтально'],
+      ['INTRAORAL_RIGHT', 'Интраорально справа'],
+      ['INTRAORAL_LEFT', 'Интраорально слева'],
+      ['OCCLUSAL_VIEWS', 'Окклюзионные виды'],
+      ['SOFT_TISSUES', 'Мягкие ткани'],
+    ]),
+    {
+      code: 'TRYIN_VIDEO_SPEECH',
+      name: 'Речь и фонетика',
+      mediaType: MediaType.VIDEO,
+      sortOrder: 20,
+      qualityProfileName: 'video-speech',
+    },
+    {
+      code: 'TRYIN_VIDEO_FACE_DYNAMICS',
+      name: 'Динамика лица и улыбки',
+      mediaType: MediaType.VIDEO,
+      required: false,
+      minCount: 0,
+      sortOrder: 21,
+      qualityProfileName: 'video-standard',
+    },
+  ];
+}
+
+function postFinalControlRequirements(): ReqDef[] {
+  return [
+    ...photoPositions('PFC', [
+      ['FACE_FRONT_REST', 'Лицо анфас покой'],
+      ['FACE_FRONT_SMILE', 'Лицо анфас улыбка'],
+      ['INTRAORAL_FRONT', 'Интраорально фронтально'],
+      ['INTRAORAL_RIGHT', 'Интраорально справа'],
+      ['INTRAORAL_LEFT', 'Интраорально слева'],
+      ['OCCLUSAL_UPPER', 'Окклюзия верх'],
+      ['OCCLUSAL_LOWER', 'Окклюзия низ'],
+      ['SOFT_TISSUES', 'Мягкие ткани'],
+      ['HYGIENE_SPACES', 'Гигиенические промежутки'],
+    ]),
+    {
+      code: 'PFC_OPTG',
+      name: 'Контрольное ОПТГ',
+      mediaType: MediaType.RADIOLOGY_IMAGE,
+      sortOrder: 20,
+    },
+  ];
+}
+
+function correctionsRequirements(): ReqDef[] {
+  return [
+    {
+      code: 'CORR_PROBLEM_AREA',
+      name: 'Зона коррекции / осложнения',
+      mediaType: MediaType.PHOTO,
+      sortOrder: 1,
+      qualityProfileName: 'photo-standard',
+    },
+    {
+      code: 'CORR_BEFORE',
+      name: 'До коррекции',
+      mediaType: MediaType.PHOTO,
+      sortOrder: 2,
+      qualityProfileName: 'photo-standard',
+    },
+    {
+      code: 'CORR_AFTER',
+      name: 'После коррекции',
+      mediaType: MediaType.PHOTO,
+      sortOrder: 3,
+      qualityProfileName: 'photo-standard',
+    },
+    {
+      code: 'CORR_DOCUMENT',
+      name: 'Документ / заключение',
+      mediaType: MediaType.DOCUMENT,
+      required: false,
+      minCount: 0,
+      sortOrder: 4,
+    },
+    {
+      code: 'CORR_ADDITIONAL_MEDIA',
+      name: 'Дополнительные материалы',
+      mediaType: MediaType.PHOTO,
+      required: false,
+      minCount: 0,
+      sortOrder: 5,
+      qualityProfileName: 'photo-standard',
+    },
+  ];
+}
+
 const MEDIA_BY_STAGE: Partial<Record<StageCode, () => ReqDef[]>> = {
   [StageCode.PRE_OPERATION]: preopRequirements,
   [StageCode.POSTOP_SURGICAL_RADIOLOGY_CONTROL]: postopRequirements,
+  [StageCode.IMPRESSIONS_OR_SCANS]: impressionsRequirements,
   [StageCode.JAW_RELATION]: jawRelationRequirements,
   [StageCode.FIRST_PROTOTYPE]: firstPrototypeRequirements,
+  [StageCode.LONG_TERM_PROTOTYPE_FIXATION]: longTermPrototypeRequirements,
+  [StageCode.CONTROL_1_3_WEEKS]: control1To3WeeksRequirements,
+  [StageCode.FINAL_PROSTHESIS_TRYIN]: finalTryinRequirements,
   [StageCode.FINAL_FIXATION]: finalFixationRequirements,
+  [StageCode.POST_FINAL_CONTROL]: postFinalControlRequirements,
+  [StageCode.CORRECTIONS_REMAKES_COMPLICATIONS]: correctionsRequirements,
 };
 
 async function main() {
@@ -351,7 +568,7 @@ async function main() {
         dependsOnStageCode: st.dependsOn ?? null,
         startBlockedUntilDependencyClosed: st.startBlocked ?? false,
         closeBlockedUntilDependencyClosed: st.closeBlocked ?? false,
-        description: st.stub ? 'Stub — детальные требования будут добавлены позже' : null,
+        description: null,
       },
       create: {
         protocolVersionId: version.id,
@@ -362,7 +579,6 @@ async function main() {
         dependsOnStageCode: st.dependsOn ?? null,
         startBlockedUntilDependencyClosed: st.startBlocked ?? false,
         closeBlockedUntilDependencyClosed: st.closeBlocked ?? false,
-        description: st.stub ? 'Stub — детальные требования будут добавлены позже' : null,
       },
     });
     stageTemplateIds[st.code] = template.id;
@@ -372,15 +588,8 @@ async function main() {
       for (const req of reqFactory()) {
         await prisma.mediaRequirement.upsert({
           where: { stageTemplateId_code: { stageTemplateId: template.id, code: req.code } },
-          update: {
-            name: req.name,
-            mediaType: req.mediaType,
-            required: req.required ?? true,
-            minCount: req.minCount ?? 1,
-            sortOrder: req.sortOrder,
-            specialRule: req.specialRule ?? null,
-            qualityProfileId: req.qualityProfileName ? profileByName[req.qualityProfileName] : null,
-          },
+          // Не перезаписываем ручные правки админа (имя, isActive, minCount и т.д.)
+          update: {},
           create: {
             protocolVersionId: version.id,
             stageTemplateId: template.id,
@@ -510,8 +719,18 @@ async function main() {
     if (code === StageCode.POSTOP_SURGICAL_RADIOLOGY_CONTROL) {
       postopStageId = stage.id;
     }
+  }
 
-    const requirements = await prisma.mediaRequirement.findMany({ where: { stageTemplateId: templateId } });
+  // Досеять RequirementInstance для всех открытых этапов всех случаев
+  // (новые положения протокола должны сразу работать на каждом этапе)
+  const openStages = await prisma.stageInstance.findMany({
+    where: { status: { not: 'CLOSED' } },
+    select: { id: true, stageTemplateId: true },
+  });
+  for (const stage of openStages) {
+    const requirements = await prisma.mediaRequirement.findMany({
+      where: { stageTemplateId: stage.stageTemplateId, isActive: true },
+    });
     for (const req of requirements) {
       await prisma.requirementInstance.upsert({
         where: {

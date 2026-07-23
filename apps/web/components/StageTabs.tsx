@@ -9,6 +9,7 @@ const TABS = [
   { key: 'photo', label: 'Фото' },
   { key: 'video', label: 'Видео' },
   { key: 'docs', label: 'Документы' },
+  { key: 'stl', label: 'STL' },
   { key: 'radiology', label: 'Рентгенология' },
   { key: 'checklist', label: 'Чек-лист' },
   { key: 'history', label: 'История' },

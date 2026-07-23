@@ -28,12 +28,45 @@ export class StagesService {
       where: { id: stageId },
       include: {
         stageTemplate: true,
-        requirementInstances: { include: { mediaRequirement: true } },
-        mediaAssets: { include: { assignments: true } },
+        requirementInstances: {
+          where: { mediaRequirement: { isActive: true } },
+          include: { mediaRequirement: true },
+          orderBy: { mediaRequirement: { sortOrder: 'asc' } },
+        },
+        mediaAssets: {
+          include: {
+            assignments: {
+              include: {
+                requirementInstance: { include: { mediaRequirement: true } },
+              },
+            },
+          },
+          where: { archivedAt: null },
+          orderBy: { uploadedAt: 'desc' },
+        },
       },
     });
     if (!stage) throw new NotFoundException('Этап не найден');
-    return stage;
+    return {
+      ...stage,
+      mediaAssets: stage.mediaAssets.map((asset) => {
+        const primary = asset.assignments.find((a) => a.status !== 'REJECTED') ?? asset.assignments[0];
+        const mr = primary?.requirementInstance?.mediaRequirement;
+        const positionName = mr?.name ?? primary?.requirementCode ?? null;
+        return {
+          ...asset,
+          fileSizeBytes:
+            typeof asset.fileSizeBytes === 'bigint'
+              ? Number(asset.fileSizeBytes)
+              : asset.fileSizeBytes,
+          displayName: positionName ?? asset.originalFileName,
+          positionName,
+          requirementCode: primary?.requirementCode ?? mr?.code ?? null,
+          sortOrder: mr?.sortOrder ?? null,
+          mediaRequirementId: mr?.id ?? null,
+        };
+      }),
+    };
   }
 
   async getCompleteness(stageId: string) {

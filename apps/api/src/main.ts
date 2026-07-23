@@ -9,6 +9,11 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookie from '@fastify/cookie';
 import { AppModule } from './app.module';
 
+// Prisma BigInt (e.g. MediaAsset.fileSizeBytes) must be JSON-serializable
+(BigInt.prototype as unknown as { toJSON?: () => string }).toJSON = function toJSON() {
+  return this.toString();
+};
+
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
@@ -20,9 +25,22 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix('api/v1');
+  const isDev = (process.env.NODE_ENV ?? 'development') !== 'production';
+  const configuredOrigins = (process.env.CORS_ORIGIN ?? process.env.WEB_URL ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.CORS_ORIGIN ?? process.env.WEB_URL ?? 'http://localhost:3000',
+    // In development reflect any Origin (localhost vs 127.0.0.1 are different browser origins).
+    // In production use explicit WEB_URL / CORS_ORIGIN list.
+    origin: isDev
+      ? true
+      : configuredOrigins.length > 0
+        ? configuredOrigins
+        : 'http://localhost:3000',
     credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   });
   app.useGlobalPipes(
     new ValidationPipe({

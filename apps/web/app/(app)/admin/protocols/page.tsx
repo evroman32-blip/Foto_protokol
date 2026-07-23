@@ -10,21 +10,31 @@ import { adminApi, type ProtocolVersionDto } from '@/lib/api';
 export default function AdminProtocolsPage() {
   const [versions, setVersions] = useState<ProtocolVersionDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void adminApi.protocolVersions().then(setVersions).finally(() => setLoading(false));
+    void adminApi
+      .protocolVersions()
+      .then(setVersions)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Ошибка загрузки'))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingState />;
 
   return (
     <div>
-      <PageHeader title="Протоколы" description="Strategic Implant PhotoProtocol" />
+      <PageHeader
+        title="Протоколы"
+        description="Настройка версий протокола, этапов и требований к материалам"
+      />
+      {error ? <div className="alert-error mb-4">{error}</div> : null}
       <div className="table-wrap">
         <table className="data-table">
           <thead>
             <tr>
               <th>Протокол</th>
+              <th>Код</th>
               <th>Версия</th>
               <th>Статус</th>
               <th />
@@ -33,7 +43,8 @@ export default function AdminProtocolsPage() {
           <tbody>
             {versions.map((v) => (
               <tr key={v.id}>
-                <td>{v.protocolName ?? v.protocolId}</td>
+                <td className="font-medium">{v.protocolName ?? v.protocol?.name ?? 'Без названия'}</td>
+                <td className="font-mono text-xs">{v.protocolCode ?? v.protocol?.code ?? '—'}</td>
                 <td>{v.version}</td>
                 <td>
                   <span className="badge-muted">{v.status}</span>
@@ -43,7 +54,7 @@ export default function AdminProtocolsPage() {
                     href={`/admin/protocols/${v.protocolId}/versions/${v.id}`}
                     className="text-sm text-accent"
                   >
-                    Шаблоны
+                    Настроить шаблоны
                   </Link>
                 </td>
               </tr>

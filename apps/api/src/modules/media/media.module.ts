@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -13,6 +14,7 @@ import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { AssignmentSource, AssignmentStatus } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
 import { QueueService, QUEUE_NAMES } from '../queue/queue.service';
+import { S3StorageService } from '../storage/s3-storage.service';
 import { AuditAction } from '../../common/decorators/metadata.decorators';
 import { Module } from '@nestjs/common';
 
@@ -40,6 +42,7 @@ export class MediaController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: QueueService,
+    private readonly storage: S3StorageService,
   ) {}
 
   @Get()
@@ -49,16 +52,62 @@ export class MediaController {
     }
     return this.prisma.mediaAsset.findMany({
       where: { stageInstanceId, archivedAt: null },
-      include: { assignments: true, metadata: true, derivatives: true },
+      include: {
+        assignments: {
+          include: { requirementInstance: { include: { mediaRequirement: true } } },
+        },
+        metadata: true,
+        derivatives: true,
+      },
       orderBy: { uploadedAt: 'desc' },
     });
+  }
+
+  @Get(':id/view-url')
+  @AuditAction('media.view')
+  async viewUrl(@Param('id') id: string) {
+    const asset = await this.prisma.mediaAsset.findUnique({
+      where: { id },
+      include: {
+        assignments: {
+          include: { requirementInstance: { include: { mediaRequirement: true } } },
+        },
+      },
+    });
+    if (!asset || asset.archivedAt) {
+      throw new NotFoundException('Файл не найден');
+    }
+    const primary = asset.assignments.find((a) => a.status !== 'REJECTED') ?? asset.assignments[0];
+    const title =
+      primary?.requirementInstance?.mediaRequirement?.name ??
+      primary?.requirementCode ??
+      asset.originalFileName;
+    const url = await this.storage.getPresignedDownloadUrl(asset.storedObjectKey);
+    return {
+      id: asset.id,
+      url,
+      mimeType: asset.mimeType,
+      mediaType: asset.mediaType,
+      originalFileName: asset.originalFileName,
+      displayName: title,
+      title,
+      requirementCode:
+        primary?.requirementCode ?? primary?.requirementInstance?.mediaRequirement?.code ?? null,
+      fileSizeBytes: Number(asset.fileSizeBytes),
+    };
   }
 
   @Get(':id')
   get(@Param('id') id: string) {
     return this.prisma.mediaAsset.findUniqueOrThrow({
       where: { id },
-      include: { assignments: true, metadata: true, derivatives: true },
+      include: {
+        assignments: {
+          include: { requirementInstance: { include: { mediaRequirement: true } } },
+        },
+        metadata: true,
+        derivatives: true,
+      },
     });
   }
 
@@ -69,8 +118,10 @@ export class MediaController {
       data: {
         mediaAssetId: id,
         requirementInstanceId: dto.requirementInstanceId ?? null,
+        requirementCode: dto.requirementCode ?? null,
         source: dto.source,
         status: dto.source === AssignmentSource.AI ? AssignmentStatus.SUGGESTED : AssignmentStatus.CONFIRMED,
+        confirmedAt: dto.source === AssignmentSource.DOCTOR ? new Date() : null,
       },
     });
   }
@@ -124,6 +175,61 @@ export class MediaController {
     return { mediaAssetId: id, status: 'queued' };
   }
 
+  @Post(':id/archive')
+  @AuditAction('media.archive')
+  async archive(@Param('id') id: string) {
+    const asset = await this.prisma.mediaAsset.findUnique({
+      where: { id },
+      include: {
+        assignments: {
+          include: {
+            requirementInstance: { include: { mediaRequirement: true } },
+          },
+        },
+      },
+    });
+    if (!asset || asset.archivedAt) {
+      throw new NotFoundException('Файл не найден');
+    }
+
+    const primary =
+      asset.assignments.find((a) => a.status !== 'REJECTED') ?? asset.assignments[0] ?? null;
+    const ri = primary?.requirementInstance;
+    const mr = ri?.mediaRequirement;
+
+    if (ri && mr) {
+      const needed = Math.max(mr.minCount ?? 0, mr.required ? 1 : 0);
+      if (needed > 0) {
+        const siblings = await this.prisma.mediaAsset.findMany({
+          where: {
+            stageInstanceId: asset.stageInstanceId,
+            archivedAt: null,
+            id: { not: id },
+            assignments: {
+              some: {
+                status: { not: AssignmentStatus.REJECTED },
+                OR: [
+                  { requirementInstanceId: ri.id },
+                  { requirementCode: mr.code },
+                ],
+              },
+            },
+          },
+        });
+        if (siblings.length < needed) {
+          throw new BadRequestException(
+            `Нельзя удалить: для положения «${mr.name}» нужно минимум ${needed} файл(ов). Сначала загрузите замену или оставьте обязательный файл.`,
+          );
+        }
+      }
+    }
+
+    return this.prisma.mediaAsset.update({
+      where: { id },
+      data: { archivedAt: new Date(), status: 'REPLACED' },
+    });
+  }
+
   @Post(':id/mark-additional')
   @AuditAction('media.markAdditional')
   markAdditional(@Param('id') id: string) {
@@ -143,9 +249,82 @@ export class StageMediaController {
   list(@Param('stageId') stageId: string) {
     return this.prisma.mediaAsset.findMany({
       where: { stageInstanceId: stageId, archivedAt: null },
-      include: { assignments: true, metadata: true, derivatives: true },
+      include: {
+        assignments: {
+          include: { requirementInstance: { include: { mediaRequirement: true } } },
+        },
+        metadata: true,
+        derivatives: true,
+      },
       orderBy: { uploadedAt: 'desc' },
     });
+  }
+
+  @Post('cleanup-duplicates')
+  @AuditAction('media.cleanup-duplicates')
+  async cleanupDuplicates(@Param('stageId') stageId: string) {
+    const stage = await this.prisma.stageInstance.findUnique({
+      where: { id: stageId },
+      include: {
+        requirementInstances: {
+          where: { mediaRequirement: { isActive: true } },
+          include: { mediaRequirement: true },
+        },
+        mediaAssets: {
+          where: { archivedAt: null },
+          include: {
+            assignments: {
+              include: { requirementInstance: { include: { mediaRequirement: true } } },
+            },
+          },
+          orderBy: { uploadedAt: 'desc' },
+        },
+      },
+    });
+    if (!stage) throw new NotFoundException('Этап не найден');
+
+    const toArchive: string[] = [];
+
+    for (const ri of stage.requirementInstances) {
+      const mr = ri.mediaRequirement;
+      const needed = Math.max(mr.minCount ?? 0, mr.required ? 1 : 0);
+      const files = stage.mediaAssets.filter((asset) =>
+        asset.assignments.some(
+          (a) =>
+            a.status !== AssignmentStatus.REJECTED &&
+            (a.requirementInstanceId === ri.id || a.requirementCode === mr.code),
+        ),
+      );
+      // newest first (already ordered desc)
+      const keep = needed > 0 ? files.slice(0, needed) : [];
+      const extras = files.filter((f) => !keep.some((k) => k.id === f.id));
+      for (const extra of extras) toArchive.push(extra.id);
+    }
+
+    // Unassigned / orphan files on the stage — archive all
+    for (const asset of stage.mediaAssets) {
+      const hasActiveAssignment = asset.assignments.some((a) => a.status !== AssignmentStatus.REJECTED);
+      if (!hasActiveAssignment && !toArchive.includes(asset.id)) {
+        toArchive.push(asset.id);
+      }
+    }
+
+    if (toArchive.length) {
+      await this.prisma.mediaAsset.updateMany({
+        where: { id: { in: toArchive } },
+        data: { archivedAt: new Date(), status: 'REPLACED' },
+      });
+    }
+
+    return {
+      stageInstanceId: stageId,
+      archivedCount: toArchive.length,
+      archivedIds: toArchive,
+      message:
+        toArchive.length > 0
+          ? `Удалено лишних файлов: ${toArchive.length}. Обязательный минимум по положениям сохранён.`
+          : 'Лишних файлов не найдено.',
+    };
   }
 }
 

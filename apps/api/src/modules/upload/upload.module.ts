@@ -76,6 +76,27 @@ class CompleteFileBody {
   fileSizeBytes?: number;
 }
 
+function isStlFile(mimeType: string, filename?: string | null) {
+  const name = (filename ?? '').toLowerCase();
+  const mime = (mimeType ?? '').toLowerCase();
+  return (
+    name.endsWith('.stl') ||
+    mime === 'model/stl' ||
+    mime === 'application/sla' ||
+    mime === 'application/vnd.ms-pki.stl' ||
+    mime === 'model/x.stl-ascii' ||
+    mime === 'model/x.stl-binary' ||
+    mime.includes('stl')
+  );
+}
+
+function inferMediaType(mimeType: string, filename?: string | null) {
+  if (isStlFile(mimeType, filename)) return 'STL';
+  if (mimeType.startsWith('video/')) return 'VIDEO';
+  if (mimeType.startsWith('image/')) return 'PHOTO';
+  return 'DOCUMENT';
+}
+
 @ApiTags('upload')
 @Controller()
 export class UploadController {
@@ -174,17 +195,14 @@ export class UploadController {
         dto.originalFileName ?? dto.uploadId ?? 'file.bin',
       );
     const mimeType = dto.mimeType ?? 'application/octet-stream';
-    const mediaType = mimeType.startsWith('video/')
-      ? 'VIDEO'
-      : mimeType.startsWith('image/')
-        ? 'PHOTO'
-        : 'DOCUMENT';
+    const originalFileName = dto.originalFileName ?? 'upload.bin';
+    const mediaType = inferMediaType(mimeType, originalFileName);
 
     const asset = await this.prisma.mediaAsset.create({
       data: {
         stageInstanceId: batch.stageInstanceId,
         uploadBatchId: batch.id,
-        originalFileName: dto.originalFileName ?? 'upload.bin',
+        originalFileName,
         storedObjectKey: objectKey,
         mimeType,
         mediaType,
@@ -196,7 +214,13 @@ export class UploadController {
     });
 
     await this.queue.addJob(QUEUE_NAMES.PROCESS_MEDIA, 'process', { mediaAssetId: asset.id });
-    return asset;
+    return {
+      ...asset,
+      fileSizeBytes:
+        typeof asset.fileSizeBytes === 'bigint'
+          ? Number(asset.fileSizeBytes)
+          : asset.fileSizeBytes,
+    };
   }
 
   @Post('upload-batches/:batchId/complete')

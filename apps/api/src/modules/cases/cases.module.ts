@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, BadRequestException } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsOptional, IsUUID, IsArray, ValidateNested } from 'class-validator';
+import { IsArray, IsDateString, IsEnum, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CaseStatus, JawScope, ParticipantRole } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -36,6 +36,7 @@ class CreateCaseDto {
   @IsUUID()
   branchId?: string;
 
+  @IsString()
   clinicalScenario!: string;
 
   @IsArray()
@@ -77,14 +78,23 @@ function assertFourPrimaryParticipants(participants: ParticipantDto[]) {
   }
 }
 
+/** Prisma relation is `stages`; web contract expects `stageInstances`. */
+function mapCase<T extends Record<string, unknown>>(clinicalCase: T) {
+  const { stages, ...rest } = clinicalCase as T & { stages?: unknown };
+  return {
+    ...rest,
+    stageInstances: stages ?? (clinicalCase as { stageInstances?: unknown }).stageInstances ?? [],
+  };
+}
+
 @ApiTags('cases')
 @Controller('cases')
 export class CasesController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  findAll(@Query('patientId') patientId?: string, @Query('status') status?: CaseStatus) {
-    return this.prisma.clinicalCase.findMany({
+  async findAll(@Query('patientId') patientId?: string, @Query('status') status?: CaseStatus) {
+    const rows = await this.prisma.clinicalCase.findMany({
       where: {
         patientId: patientId ?? undefined,
         status: status ?? undefined,
@@ -97,11 +107,12 @@ export class CasesController {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map(mapCase);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.prisma.clinicalCase.findUniqueOrThrow({
+  async findOne(@Param('id') id: string) {
+    const row = await this.prisma.clinicalCase.findUniqueOrThrow({
       where: { id },
       include: {
         patient: true,
@@ -110,6 +121,7 @@ export class CasesController {
         protocolVersion: { include: { protocol: true } },
       },
     });
+    return mapCase(row);
   }
 
   @Get(':id/stages')
@@ -128,11 +140,13 @@ export class CasesController {
 
     const templates = await this.prisma.stageTemplate.findMany({
       where: { protocolVersionId: dto.protocolVersionId, isActive: true },
-      include: { mediaRequirements: true },
+      include: {
+        mediaRequirements: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } },
+      },
       orderBy: { sortOrder: 'asc' },
     });
 
-    return this.prisma.clinicalCase.create({
+    const created = await this.prisma.clinicalCase.create({
       data: {
         patientId: dto.patientId,
         protocolVersionId: dto.protocolVersionId,
@@ -168,12 +182,13 @@ export class CasesController {
         stages: { include: { stageTemplate: true } },
       },
     });
+    return mapCase(created);
   }
 
   @Patch(':id')
   @AuditAction('case.update')
-  update(@Param('id') id: string, @Body() dto: UpdateCaseDto) {
-    return this.prisma.clinicalCase.update({
+  async update(@Param('id') id: string, @Body() dto: UpdateCaseDto) {
+    const updated = await this.prisma.clinicalCase.update({
       where: { id },
       data: {
         status: dto.status,
@@ -187,6 +202,7 @@ export class CasesController {
         stages: { include: { stageTemplate: true } },
       },
     });
+    return mapCase(updated);
   }
 
   @Post(':id/participants')

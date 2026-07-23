@@ -97,9 +97,10 @@ export default function NewPatientPage() {
 
         <div>
           <label className="label-field" htmlFor="cardNumber">
-            Номер карты
+            Номер карты *
           </label>
-          <input id="cardNumber" name="cardNumber" className="input-field" />
+          <input id="cardNumber" name="cardNumber" required className="input-field" placeholder="Например LOCAL-0002" />
+          <p className="mt-1 text-xs text-gray-500">Локальный номер карты пациента (обязателен без 1С)</p>
         </div>
 
         <div className="flex gap-2">

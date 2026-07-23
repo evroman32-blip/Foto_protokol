@@ -33,9 +33,11 @@ export class StageCompletenessApiService {
           },
         },
         requirementInstances: {
+          where: { mediaRequirement: { isActive: true } },
           include: {
             mediaRequirement: { include: { qualityProfile: true } },
           },
+          orderBy: { mediaRequirement: { sortOrder: 'asc' } },
         },
         mediaAssets: { include: { assignments: true } },
         radiologyStudies: true,

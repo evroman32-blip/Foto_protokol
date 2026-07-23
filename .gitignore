@@ -26,3 +26,14 @@ prisma/*.db-journal
 .redis-data/
 *.pem
 secrets/
+
+# Local infra binaries/archives (too large for GitHub; keep on disk only)
+tools/minio.exe
+tools/pgsql.zip
+tools/pgsql/
+tools/redis/
+tools/redis-data/
+tools/minio-data/
+tools/*.zip
+tools/*.exe
+tools/next-build-*.txt

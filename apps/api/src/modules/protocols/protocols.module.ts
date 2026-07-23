@@ -28,7 +28,7 @@ export class ProtocolsController {
       include: {
         protocol: true,
         stageTemplates: { orderBy: { sortOrder: 'asc' } },
-        mediaRequirements: { orderBy: { sortOrder: 'asc' } },
+        mediaRequirements: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } },
       },
     });
   }

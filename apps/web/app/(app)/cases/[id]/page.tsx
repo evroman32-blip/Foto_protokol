@@ -39,7 +39,7 @@ export default function CaseDetailPage() {
   if (error && !clinicalCase) return <ErrorState message={error} onRetry={load} />;
   if (!clinicalCase) return null;
 
-  const stages = [...clinicalCase.stageInstances].sort(
+  const stages = [...(clinicalCase.stageInstances ?? [])].sort(
     (a, b) => a.stageTemplate.sortOrder - b.stageTemplate.sortOrder,
   );
 

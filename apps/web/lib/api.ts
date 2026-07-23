@@ -41,11 +41,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   if (!res.ok) {
     const errBody = await res.json().catch(() => undefined);
-    throw new ApiError(
-      (errBody as { message?: string })?.message ?? `HTTP ${res.status}`,
-      res.status,
-      errBody,
-    );
+    const raw = (errBody as { message?: string | string[] })?.message;
+    const message = Array.isArray(raw) ? raw.join('; ') : raw ?? `HTTP ${res.status}`;
+    throw new ApiError(message, res.status, errBody);
   }
 
   if (res.status === 204) return undefined as T;
@@ -73,7 +71,9 @@ export interface PatientDto {
   birthDate?: string | null;
   sex?: string;
   phone?: string | null;
+  /** UI alias для localPatientNumber */
   cardNumber?: string | null;
+  localPatientNumber?: string | null;
   source?: string;
   externalId?: string | null;
   createdAt?: string;
@@ -86,16 +86,48 @@ export interface PatientInput {
   birthDate?: string;
   sex?: string;
   phone?: string;
+  /** Номер карты — уходит в API как localPatientNumber */
   cardNumber?: string;
+  localPatientNumber?: string;
+}
+
+function normalizePatient(p: PatientDto): PatientDto {
+  const card = p.cardNumber ?? p.localPatientNumber ?? null;
+  return {
+    ...p,
+    cardNumber: card,
+    localPatientNumber: p.localPatientNumber ?? card,
+  };
+}
+
+function toPatientPayload(data: Partial<PatientInput>) {
+  const localPatientNumber = data.localPatientNumber ?? data.cardNumber;
+  return {
+    ...data,
+    localPatientNumber,
+    cardNumber: data.cardNumber ?? localPatientNumber,
+  };
 }
 
 export const patientsApi = {
-  list: (params?: { q?: string }) =>
-    request<PatientDto[]>(`/api/v1/patients${params?.q ? `?q=${encodeURIComponent(params.q)}` : ''}`),
-  get: (id: string) => request<PatientDto>(`/api/v1/patients/${id}`),
-  create: (data: PatientInput) => request<PatientDto>('/api/v1/patients', { method: 'POST', body: data }),
-  update: (id: string, data: Partial<PatientInput>) =>
-    request<PatientDto>(`/api/v1/patients/${id}`, { method: 'PATCH', body: data }),
+  list: async (params?: { q?: string }) => {
+    const rows = await request<PatientDto[]>(
+      `/api/v1/patients${params?.q ? `?q=${encodeURIComponent(params.q)}` : ''}`,
+    );
+    return rows.map(normalizePatient);
+  },
+  get: async (id: string) => normalizePatient(await request<PatientDto>(`/api/v1/patients/${id}`)),
+  create: async (data: PatientInput) =>
+    normalizePatient(
+      await request<PatientDto>('/api/v1/patients', { method: 'POST', body: toPatientPayload(data) }),
+    ),
+  update: async (id: string, data: Partial<PatientInput>) =>
+    normalizePatient(
+      await request<PatientDto>(`/api/v1/patients/${id}`, {
+        method: 'PATCH',
+        body: toPatientPayload(data),
+      }),
+    ),
   remove: (id: string) => request<void>(`/api/v1/patients/${id}`, { method: 'DELETE' }),
 };
 
@@ -148,13 +180,81 @@ export interface ProtocolVersionDto {
   status: string;
   protocolId: string;
   protocolName?: string;
+  protocolCode?: string | null;
+  protocol?: { id: string; name: string; code: string };
+  stageTemplates?: StageTemplateAdminDto[];
+}
+
+export interface MediaRequirementAdminDto {
+  id: string;
+  stageTemplateId: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  mediaType: string;
+  required: boolean;
+  minCount: number;
+  maxCount?: number | null;
+  sortOrder: number;
+  isActive: boolean;
+  instruction?: string | null;
+}
+
+export interface StageTemplateAdminDto {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  sortOrder: number;
+  ownerRole: string;
+  dependsOnStageCode?: string | null;
+  isActive?: boolean;
+  mediaRequirements?: MediaRequirementAdminDto[];
+}
+
+function normalizeProtocolVersion(v: ProtocolVersionDto): ProtocolVersionDto {
+  return {
+    ...v,
+    protocolName: v.protocolName ?? v.protocol?.name ?? v.protocolId,
+    protocolCode: v.protocolCode ?? v.protocol?.code ?? null,
+  };
 }
 
 export const adminApi = {
   branches: () => request<BranchDto[]>('/api/v1/branches'),
-  protocolVersions: () => request<ProtocolVersionDto[]>('/api/v1/admin/protocol-versions'),
-  protocolVersion: (protocolId: string, versionId: string) =>
-    request<ProtocolVersionDto>(`/api/v1/admin/protocols/${protocolId}/versions/${versionId}`),
+  protocolVersions: async () => {
+    const rows = await request<ProtocolVersionDto[]>('/api/v1/admin/protocol-versions');
+    return rows.map(normalizeProtocolVersion);
+  },
+  protocolVersion: async (protocolId: string, versionId: string) =>
+    normalizeProtocolVersion(
+      await request<ProtocolVersionDto>(`/api/v1/admin/protocols/${protocolId}/versions/${versionId}`),
+    ),
+  updateStageTemplate: (id: string, data: Partial<StageTemplateAdminDto>) =>
+    request<StageTemplateAdminDto>(`/api/v1/admin/stage-templates/${id}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+  createMediaRequirement: (data: {
+    stageTemplateId: string;
+    code: string;
+    name: string;
+    mediaType: string;
+    required?: boolean;
+    minCount?: number;
+    maxCount?: number | null;
+    sortOrder?: number;
+    instruction?: string;
+  }) =>
+    request<MediaRequirementAdminDto>('/api/v1/admin/media-requirements', {
+      method: 'POST',
+      body: data,
+    }),
+  updateMediaRequirement: (id: string, data: Partial<MediaRequirementAdminDto>) =>
+    request<MediaRequirementAdminDto>(`/api/v1/admin/media-requirements/${id}`, {
+      method: 'PATCH',
+      body: data,
+    }),
   implantMethods: (params?: { q?: string; jawScope?: string; active?: boolean }) => {
     const search = new URLSearchParams();
     if (params?.q) search.set('q', params.q);
@@ -209,9 +309,19 @@ export interface ClinicalCaseDto {
   branch?: BranchDto | null;
   protocolVersion: ProtocolVersionDto;
   participants: CaseParticipantDto[];
+  /** Normalized from API `stages` when needed */
   stageInstances: StageInstanceDto[];
+  /** Raw Prisma field — kept optional for compatibility */
+  stages?: StageInstanceDto[];
   externalRefs?: Array<{ externalId: string; system: string }>;
   createdAt?: string;
+}
+
+function normalizeCase(c: ClinicalCaseDto & { stages?: StageInstanceDto[] }): ClinicalCaseDto {
+  return {
+    ...c,
+    stageInstances: c.stageInstances ?? c.stages ?? [],
+  };
 }
 
 export interface CreateCaseInput {
@@ -228,34 +338,115 @@ export interface CreateCaseInput {
   externalClinicalCaseId?: string;
 }
 
+function toCreateCasePayload(data: CreateCaseInput) {
+  return {
+    patientId: data.patientId,
+    clinicalScenario: data.clinicalScenario,
+    jawScope: data.jawScope,
+    treatmentStartDate: data.treatmentStartDate,
+    branchId: data.branchId,
+    protocolVersionId: data.protocolVersionId,
+    participants: [
+      {
+        staffMemberId: data.consultingDoctorId,
+        participantRole: 'CONSULTING_DOCTOR',
+        isPrimary: true,
+      },
+      {
+        staffMemberId: data.orthopedistId,
+        participantRole: 'ORTHOPEDIST',
+        isPrimary: true,
+      },
+      {
+        staffMemberId: data.surgeonId,
+        participantRole: 'SURGEON',
+        isPrimary: true,
+      },
+      {
+        staffMemberId: data.dentalTechnicianId,
+        participantRole: 'DENTAL_TECHNICIAN',
+        isPrimary: true,
+      },
+    ],
+  };
+}
+
 export const casesApi = {
-  list: (params?: { status?: string }) => {
+  list: async (params?: { status?: string }) => {
     const qs = params?.status ? `?status=${params.status}` : '';
-    return request<ClinicalCaseDto[]>(`/api/v1/cases${qs}`);
+    const rows = await request<ClinicalCaseDto[]>(`/api/v1/cases${qs}`);
+    return rows.map(normalizeCase);
   },
-  get: (id: string) => request<ClinicalCaseDto>(`/api/v1/cases/${id}`),
-  create: (data: CreateCaseInput) => request<ClinicalCaseDto>('/api/v1/cases', { method: 'POST', body: data }),
+  get: async (id: string) => normalizeCase(await request<ClinicalCaseDto>(`/api/v1/cases/${id}`)),
+  create: async (data: CreateCaseInput) =>
+    normalizeCase(
+      await request<ClinicalCaseDto>('/api/v1/cases', {
+        method: 'POST',
+        body: toCreateCasePayload(data),
+      }),
+    ),
 };
 
 // --- Stages ---
+export interface MediaRequirementDto {
+  id: string;
+  code: string;
+  name: string;
+  mediaType: string;
+  required: boolean;
+  minCount: number;
+  maxCount?: number | null;
+  sortOrder: number;
+  isActive?: boolean;
+}
+
+export interface RequirementInstanceDto {
+  id: string;
+  status?: string;
+  mediaRequirement: MediaRequirementDto;
+}
+
 export interface MediaAssetDto {
   id: string;
   mediaType: string;
   status: string;
   originalFilename?: string;
+  originalFileName?: string;
+  displayName?: string | null;
+  positionName?: string | null;
+  requirementCode?: string | null;
+  sortOrder?: number | null;
+  mediaRequirementId?: string | null;
   mimeType?: string;
   assignments?: Array<{
     id: string;
-    requirementCode: string;
+    requirementCode?: string | null;
+    requirementInstanceId?: string | null;
     source: string;
     status: string;
     confidence?: number;
+    requirementInstance?: {
+      mediaRequirement?: { id: string; code: string; name: string; sortOrder?: number };
+    };
   }>;
+}
+
+export interface MediaViewUrlDto {
+  id: string;
+  url: string;
+  mimeType: string;
+  mediaType: string;
+  originalFileName: string;
+  displayName: string;
+  title: string;
+  requirementCode?: string | null;
+  fileSizeBytes?: number;
 }
 
 export interface StageDetailDto extends StageInstanceDto {
   clinicalCaseId: string;
   mediaAssets: MediaAssetDto[];
+  requirementInstances?: RequirementInstanceDto[];
   auditEvents?: AuditEventDto[];
   dependencyBlockers?: StageCompletenessResult['dependencyBlockers'];
 }
@@ -266,8 +457,11 @@ export const stagesApi = {
   closurePermission: (id: string) =>
     request<StageClosurePermissionResult>(`/api/v1/stages/${id}/closure-permission`),
   close: (id: string) => request<{ success: boolean }>(`/api/v1/stages/${id}/close`, { method: 'POST' }),
-  confirmDoctor: (id: string) =>
-    request<{ success: boolean }>(`/api/v1/stages/${id}/confirm-doctor`, { method: 'POST' }),
+  confirmDoctor: (id: string, confirmationText?: string) =>
+    request<{ id: string }>(`/api/v1/stages/${id}/confirm`, {
+      method: 'POST',
+      body: confirmationText ? { confirmationText } : {},
+    }),
   emergency: (id: string, data: { description: string }) =>
     request<{ id: string }>(`/api/v1/stages/${id}/emergency-events`, { method: 'POST', body: data }),
 };
@@ -276,7 +470,12 @@ export const stagesApi = {
 export interface PresignResponse {
   uploadUrl: string;
   objectKey: string;
-  mediaAssetId: string;
+  uploadId: string;
+  originalFileName?: string;
+  mimeType?: string;
+  fileSizeBytes?: number;
+  /** legacy alias — may be absent until files/complete */
+  mediaAssetId?: string;
 }
 
 export const uploadApi = {
@@ -290,6 +489,20 @@ export const uploadApi = {
       method: 'POST',
       body: file,
     }),
+  completeFile: (
+    batchId: string,
+    data: {
+      uploadId: string;
+      objectKey: string;
+      originalFileName: string;
+      mimeType: string;
+      fileSizeBytes: number;
+    },
+  ) =>
+    request<MediaAssetDto>(`/api/v1/upload-batches/${batchId}/files/complete`, {
+      method: 'POST',
+      body: data,
+    }),
   completeBatch: (batchId: string) =>
     request<{ success: boolean }>(`/api/v1/upload/batches/${batchId}/complete`, { method: 'POST' }),
   uploadFile: async (
@@ -300,7 +513,7 @@ export const uploadApi = {
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('PUT', presign.uploadUrl);
-      xhr.setRequestHeader('Content-Type', file.type);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
       };
@@ -309,6 +522,31 @@ export const uploadApi = {
       xhr.send(file);
     });
   },
+};
+
+export const mediaApi = {
+  viewUrl: (mediaAssetId: string) =>
+    request<MediaViewUrlDto>(`/api/v1/media/${mediaAssetId}/view-url`),
+  archive: (mediaAssetId: string) =>
+    request<{ id: string }>(`/api/v1/media/${mediaAssetId}/archive`, { method: 'POST' }),
+  cleanupDuplicates: (stageInstanceId: string) =>
+    request<{ archivedCount: number; message: string }>(
+      `/api/v1/stages/${stageInstanceId}/media/cleanup-duplicates`,
+      { method: 'POST' },
+    ),
+  assign: (
+    mediaAssetId: string,
+    data: { requirementInstanceId?: string; requirementCode?: string; source: 'DOCTOR' | 'AI' | 'SURGEON' },
+  ) =>
+    request<{ id: string }>(`/api/v1/media/${mediaAssetId}/assignment`, {
+      method: 'POST',
+      body: data,
+    }),
+  confirmAssignment: (assignmentId: string, requirementCode: string) =>
+    request<{ success: boolean }>(`/api/v1/media-assignments/${assignmentId}/confirm`, {
+      method: 'POST',
+      body: { requirementCode },
+    }),
 };
 
 // --- Radiology / Surgical ---
