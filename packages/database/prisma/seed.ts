@@ -29,32 +29,61 @@ const STAGE_DEFS: Array<{
 ];
 
 const IMPLANT_METHODS = [
-  { code: 'M1A_MULTI_DIRECTIONAL_NON_PARALLEL', methodNumber: 1, submethodCode: '1a', nameRu: 'Многонаправленная непараллельная установка имплантатов', isGeneral: true, sortOrder: 1 },
-  { code: 'M1B_STRATEGIC_IMPLANT_POSITIONS', methodNumber: 1, submethodCode: '1b', nameRu: 'Стратегические позиции имплантатов / классические положения', isGeneral: true, sortOrder: 2 },
-  { code: 'M1C_BASAL_BONE', methodNumber: 1, submethodCode: '1c', nameRu: 'Базальная кость / установка на 2-й или 3-й кортикальной пластинке', isGeneral: true, requiresCorticalTarget: true, sortOrder: 3 },
-  { code: 'M2_CHIN_AREA_PLACEMENT', methodNumber: 2, nameRu: 'Установка в области подбородка', jawScope: JawScope.LOWER, sortOrder: 4 },
-  { code: 'M3_ANTERIOR_FIXATION_SEGMENTAL_BRIDGE', methodNumber: 3, nameRu: 'Передняя фиксация при сегментарном мосте через линию симметрии', jawScope: JawScope.LOWER, requiresCorticalTarget: true, sortOrder: 5 },
-  { code: 'M4_NERVE_BYPASS', methodNumber: 4, nameRu: 'Обход нижнечелюстного нерва', jawScope: JawScope.LOWER, requiresNerveRelation: true, sortOrder: 6 },
-  { code: 'M5A_LINGUAL_CORTICAL_DISTAL_MANDIBLE', methodNumber: 5, submethodCode: '5a', nameRu: 'Лингвальный кортикальный имплантат в дистальном отделе нижней челюсти', jawScope: JawScope.LOWER, requiresCorticalTarget: true, requiresNerveRelation: true, sortOrder: 7 },
-  { code: 'M5B_VESTIBULAR_CORTICAL_DISTAL_MANDIBLE', methodNumber: 5, submethodCode: '5b', nameRu: 'Вестибулярный кортикальный имплантат в дистальном отделе нижней челюсти', jawScope: JawScope.LOWER, requiresCorticalTarget: true, requiresNerveRelation: true, sortOrder: 8 },
-  { code: 'M6_LARGE_DIAMETER_LINGUAL_PALATAL_VESTIBULAR_CORTICAL', methodNumber: 6, nameRu: 'BCS большого диаметра в лингвальном/палатинальном и вестибулярном кортикальном положении', jawScope: JawScope.BOTH, requiresCorticalTarget: true, sortOrder: 9 },
-  { code: 'M7A_NASAL_FLOOR_CORTICAL_ENGAGEMENT', methodNumber: 7, submethodCode: '7a', nameRu: 'Вовлечение кортикальной кости с вовлечением дна полости носа', jawScope: JawScope.UPPER, requiresNasalFloorRelation: true, requiresCorticalTarget: true, sortOrder: 10 },
-  { code: 'M7B_PALATAL_NASAL_FLOOR_PLACEMENT', methodNumber: 7, submethodCode: '7b', nameRu: 'Палатинальная установка с дном полости носа', jawScope: JawScope.UPPER, requiresNasalFloorRelation: true, requiresCorticalTarget: true, sortOrder: 11 },
-  { code: 'M8A_MAXILLARY_SINUS_FLOOR_CORTICAL_ENGAGEMENT', methodNumber: 8, submethodCode: '8a', nameRu: 'Установка с вовлечением кортикальной кости дна верхнечелюстной пазухи', jawScope: JawScope.UPPER, requiresSinusRelation: true, requiresCorticalTarget: true, sortOrder: 12 },
-  { code: 'M8B_SINUS_SEPTA_MULTICORTICAL_FIXATION', methodNumber: 8, submethodCode: '8b', nameRu: 'Мультикортикальная фиксация через перегородки верхнечелюстной пазухи', jawScope: JawScope.UPPER, requiresSinusRelation: true, requiresCorticalTarget: true, sortOrder: 13 },
-  { code: 'M9_UPPER_CANINE_BYPASS', methodNumber: 9, nameRu: 'Обход верхнего клыка / резцовой зоны', jawScope: JawScope.UPPER, sortOrder: 14 },
-  { code: 'M10_TUBERO_PTERYGOID', methodNumber: 10, nameRu: 'Туберо-пterygoid установка', jawScope: JawScope.UPPER, requiresPterygoidRelation: true, requiresCorticalTarget: true, sortOrder: 15 },
-  { code: 'M10A_DOUBLE_TUBERO_PTERYGOID', methodNumber: 10, submethodCode: '10a', nameRu: 'Двойная tubero-pterygoid установка', jawScope: JawScope.UPPER, requiresPterygoidRelation: true, requiresCorticalTarget: true, sortOrder: 16 },
-  { code: 'M11A_BONE_PALATAL_TO_MAXILLARY_SINUS', methodNumber: 11, submethodCode: '11a', nameRu: 'Установка в кости между альвеолой и верхнечелюстной пазухой', jawScope: JawScope.UPPER, requiresSinusRelation: true, requiresCorticalTarget: true, sortOrder: 17 },
-  { code: 'M11B_MEDIAN_PALATAL_SUTURE', methodNumber: 11, submethodCode: '11b', nameRu: 'Установка в медианный палатинальный шов', jawScope: JawScope.UPPER, requiresCorticalTarget: true, sortOrder: 18 },
-  { code: 'M11C_ALVEOLAR_PALATAL_FIXATION', methodNumber: 11, submethodCode: '11c', nameRu: 'Альвеолярно-пalatinal фиксация', jawScope: JawScope.UPPER, requiresCorticalTarget: true, sortOrder: 19 },
-  { code: 'M12_ZYGOMATIC_IMPLANT', methodNumber: 12, nameRu: 'Скуловой имплантат / установка в скуловую кость', jawScope: JawScope.UPPER, requiresZygomaticRelation: true, requiresCorticalTarget: true, sortOrder: 20 },
-  { code: 'M13_TRANSCORTICAL_DISTAL_MANDIBLE_CAUDAL_TO_NAI', methodNumber: 13, nameRu: 'Транскортикальная установка в дистальном отделе нижней челюсти кaudal к нижнеальвеолярному нерву', jawScope: JawScope.LOWER, requiresNerveRelation: true, requiresCorticalTarget: true, sortOrder: 21 },
-  { code: 'M14_HORIZONTAL_BICORTICAL_FRESH_LOWER_PREMOLAR_SOCKET', methodNumber: 14, nameRu: 'Горизонтальная бикортикальная установка в лунку свежевылеченного нижнего premolar', jawScope: JawScope.LOWER, requiresCorticalTarget: true, sortOrder: 22 },
-  { code: 'M15_PALATAL_SOCKET_UPPER_MOLAR', methodNumber: 15, nameRu: 'Установка Strategic Implant вертикально в лунку верхнего molar', jawScope: JawScope.UPPER, requiresCorticalTarget: true, sortOrder: 23 },
-  { code: 'M16A_TWO_IMPLANTS_UPPER_FIRST_PREMOLAR', methodNumber: 16, submethodCode: '16a', nameRu: 'Два имплантата в области первого premolar верхней челюсти', jawScope: JawScope.UPPER, sortOrder: 24 },
-  { code: 'M16B_TWO_IMPLANTS_UPPER_SECOND_PREMOLAR_SOCKET', methodNumber: 16, submethodCode: '16b', nameRu: 'Два имплантата в лунке второго premolar верхней челюсти для tubero-pterygoid фиксации', jawScope: JawScope.UPPER, sortOrder: 25 },
+  { code: 'M1A', methodNumber: 1, submethodCode: 'A', nameRu: 'Многонаправленная непараллельная установка имплантатов', isGeneral: true, sortOrder: 1 },
+  { code: 'M1B', methodNumber: 1, submethodCode: 'B', nameRu: 'Стратегические позиции имплантатов / классические положения', isGeneral: true, sortOrder: 2 },
+  { code: 'M1C', methodNumber: 1, submethodCode: 'C', nameRu: 'Базальная кость / установка на 2-й или 3-й кортикальной пластинке', isGeneral: true, requiresCorticalTarget: true, sortOrder: 3 },
+  { code: 'M2', methodNumber: 2, nameRu: 'Установка в области подбородка', jawScope: JawScope.LOWER, sortOrder: 4 },
+  { code: 'M3', methodNumber: 3, nameRu: 'Передняя фиксация при сегментарном мосте через линию симметрии', jawScope: JawScope.LOWER, requiresCorticalTarget: true, sortOrder: 5 },
+  { code: 'M4', methodNumber: 4, nameRu: 'Обход нижнечелюстного нерва', jawScope: JawScope.LOWER, requiresNerveRelation: true, sortOrder: 6 },
+  { code: 'M5A', methodNumber: 5, submethodCode: 'A', nameRu: 'Лингвальный кортикальный имплантат в дистальном отделе нижней челюсти', jawScope: JawScope.LOWER, requiresCorticalTarget: true, requiresNerveRelation: true, sortOrder: 7 },
+  { code: 'M5B', methodNumber: 5, submethodCode: 'B', nameRu: 'Вестибулярный кортикальный имплантат в дистальном отделе нижней челюсти', jawScope: JawScope.LOWER, requiresCorticalTarget: true, requiresNerveRelation: true, sortOrder: 8 },
+  { code: 'M6', methodNumber: 6, nameRu: 'BCS большого диаметра в лингвальном/палатинальном и вестибулярном кортикальном положении', jawScope: JawScope.BOTH, requiresCorticalTarget: true, sortOrder: 9 },
+  { code: 'M7A', methodNumber: 7, submethodCode: 'A', nameRu: 'Вовлечение кортикальной кости с вовлечением дна полости носа', jawScope: JawScope.UPPER, requiresNasalFloorRelation: true, requiresCorticalTarget: true, sortOrder: 10 },
+  { code: 'M7B', methodNumber: 7, submethodCode: 'B', nameRu: 'Палатинальная установка с дном полости носа', jawScope: JawScope.UPPER, requiresNasalFloorRelation: true, requiresCorticalTarget: true, sortOrder: 11 },
+  { code: 'M8A', methodNumber: 8, submethodCode: 'A', nameRu: 'Установка с вовлечением кортикальной кости дна верхнечелюстной пазухи', jawScope: JawScope.UPPER, requiresSinusRelation: true, requiresCorticalTarget: true, sortOrder: 12 },
+  { code: 'M8B', methodNumber: 8, submethodCode: 'B', nameRu: 'Мультикортикальная фиксация через перегородки верхнечелюстной пазухи', jawScope: JawScope.UPPER, requiresSinusRelation: true, requiresCorticalTarget: true, sortOrder: 13 },
+  { code: 'M9', methodNumber: 9, nameRu: 'Обход верхнего клыка / резцовой зоны', jawScope: JawScope.UPPER, sortOrder: 14 },
+  { code: 'M10', methodNumber: 10, nameRu: 'Туберо-птеригоидная установка', jawScope: JawScope.UPPER, requiresPterygoidRelation: true, requiresCorticalTarget: true, sortOrder: 15 },
+  { code: 'M10A', methodNumber: 10, submethodCode: 'A', nameRu: 'Двойная туберо-птеригоидная установка', jawScope: JawScope.UPPER, requiresPterygoidRelation: true, requiresCorticalTarget: true, sortOrder: 16 },
+  { code: 'M11A', methodNumber: 11, submethodCode: 'A', nameRu: 'Установка в кости между альвеолой и верхнечелюстной пазухой', jawScope: JawScope.UPPER, requiresSinusRelation: true, requiresCorticalTarget: true, sortOrder: 17 },
+  { code: 'M11B', methodNumber: 11, submethodCode: 'B', nameRu: 'Установка в медианный палатинальный шов', jawScope: JawScope.UPPER, requiresCorticalTarget: true, sortOrder: 18 },
+  { code: 'M11C', methodNumber: 11, submethodCode: 'C', nameRu: 'Альвеолярно-палатинальная фиксация', jawScope: JawScope.UPPER, requiresCorticalTarget: true, sortOrder: 19 },
+  { code: 'M12', methodNumber: 12, nameRu: 'Скуловой имплантат / установка в скуловую кость', jawScope: JawScope.UPPER, requiresZygomaticRelation: true, requiresCorticalTarget: true, sortOrder: 20 },
+  { code: 'M13', methodNumber: 13, nameRu: 'Транскортикальная установка в дистальном отделе нижней челюсти каудальнее нижнеальвеолярного нерва', jawScope: JawScope.LOWER, requiresNerveRelation: true, requiresCorticalTarget: true, sortOrder: 21 },
+  { code: 'M14', methodNumber: 14, nameRu: 'Горизонтальная бикортикальная установка в лунку свежеудалённого нижнего премоляра', jawScope: JawScope.LOWER, requiresCorticalTarget: true, sortOrder: 22 },
+  { code: 'M15', methodNumber: 15, nameRu: 'Установка Strategic Implant вертикально в лунку верхнего моляра', jawScope: JawScope.UPPER, requiresCorticalTarget: true, sortOrder: 23 },
+  { code: 'M16A', methodNumber: 16, submethodCode: 'A', nameRu: 'Два имплантата в области первого премоляра верхней челюсти', jawScope: JawScope.UPPER, sortOrder: 24 },
+  { code: 'M16B', methodNumber: 16, submethodCode: 'B', nameRu: 'Два имплантата в лунке второго премоляра верхней челюсти для туберо-птеригоидной фиксации', jawScope: JawScope.UPPER, sortOrder: 25 },
 ];
+
+/** Старые длинные коды → короткие (миграция) */
+const IMPLANT_METHOD_CODE_ALIASES: Record<string, string> = {
+  M1A_MULTI_DIRECTIONAL_NON_PARALLEL: 'M1A',
+  M1B_STRATEGIC_IMPLANT_POSITIONS: 'M1B',
+  M1C_BASAL_BONE: 'M1C',
+  M2_CHIN_AREA_PLACEMENT: 'M2',
+  M3_ANTERIOR_FIXATION_SEGMENTAL_BRIDGE: 'M3',
+  M4_NERVE_BYPASS: 'M4',
+  M5A_LINGUAL_CORTICAL_DISTAL_MANDIBLE: 'M5A',
+  M5B_VESTIBULAR_CORTICAL_DISTAL_MANDIBLE: 'M5B',
+  M6_LARGE_DIAMETER_LINGUAL_PALATAL_VESTIBULAR_CORTICAL: 'M6',
+  M7A_NASAL_FLOOR_CORTICAL_ENGAGEMENT: 'M7A',
+  M7B_PALATAL_NASAL_FLOOR_PLACEMENT: 'M7B',
+  M8A_MAXILLARY_SINUS_FLOOR_CORTICAL_ENGAGEMENT: 'M8A',
+  M8B_SINUS_SEPTA_MULTICORTICAL_FIXATION: 'M8B',
+  M9_UPPER_CANINE_BYPASS: 'M9',
+  M10_TUBERO_PTERYGOID: 'M10',
+  M10A_DOUBLE_TUBERO_PTERYGOID: 'M10A',
+  M11A_BONE_PALATAL_TO_MAXILLARY_SINUS: 'M11A',
+  M11B_MEDIAN_PALATAL_SUTURE: 'M11B',
+  M11C_ALVEOLAR_PALATAL_FIXATION: 'M11C',
+  M12_ZYGOMATIC_IMPLANT: 'M12',
+  M13_TRANSCORTICAL_DISTAL_MANDIBLE_CAUDAL_TO_NAI: 'M13',
+  M14_HORIZONTAL_BICORTICAL_FRESH_LOWER_PREMOLAR_SOCKET: 'M14',
+  M15_PALATAL_SOCKET_UPPER_MOLAR: 'M15',
+  M16A_TWO_IMPLANTS_UPPER_FIRST_PREMOLAR: 'M16A',
+  M16B_TWO_IMPLANTS_UPPER_SECOND_PREMOLAR_SOCKET: 'M16B',
+};
 
 type ReqDef = {
   code: string;
@@ -100,10 +129,15 @@ function preopRequirements(): ReqDef[] {
 function postopRequirements(): ReqDef[] {
   return [
     { code: 'POSTOP_OPTG', name: 'Послеоперационное ОПТГ', mediaType: MediaType.RADIOLOGY_IMAGE, sortOrder: 1 },
-    { code: 'POSTOP_CBCT_STUDY', name: 'Послеоперационная КТ / КЛКТ', mediaType: MediaType.RADIOLOGY_STUDY, sortOrder: 2 },
-    { code: 'POSTOP_IMPLANT_CT_SLICES', name: 'КТ-срезы по каждому имплантату', mediaType: MediaType.RADIOLOGY_IMAGE, sortOrder: 3, specialRule: 'oneConfirmedSlicePerImplant' },
-    { code: 'POSTOP_IMPLANT_METHOD_REGISTRY', name: 'Реестр методов установки', mediaType: MediaType.STRUCTURED_DATA, sortOrder: 4, specialRule: 'everyImplantHasActualMethod' },
-    { code: 'POSTOP_SURGEON_CONFIRMATION', name: 'Подтверждение хирурга', mediaType: MediaType.STRUCTURED_CONFIRMATION, sortOrder: 5 },
+    {
+      code: 'POSTOP_IMPLANT_SLICE_CARDS',
+      name: 'Карточки срезов имплантатов (JPG)',
+      mediaType: MediaType.STRUCTURED_DATA,
+      sortOrder: 2,
+      specialRule: 'everyImplantHasJpgSliceCard',
+    },
+    { code: 'POSTOP_IMPLANT_METHOD_REGISTRY', name: 'Реестр методов установки', mediaType: MediaType.STRUCTURED_DATA, sortOrder: 3, specialRule: 'everyImplantHasActualMethod' },
+    { code: 'POSTOP_SURGEON_CONFIRMATION', name: 'Подтверждение хирурга', mediaType: MediaType.STRUCTURED_CONFIRMATION, sortOrder: 4 },
   ];
 }
 
@@ -608,10 +642,75 @@ async function main() {
     }
   }
 
+  // КТ/КЛКТ и DICOM полностью убираем из всех шаблонов (не только isActive=false)
+  const toRemove = await prisma.mediaRequirement.findMany({
+    where: {
+      OR: [
+        { mediaType: { in: ['RADIOLOGY_STUDY', 'DICOM_SERIES'] } },
+        { code: { in: ['POSTOP_CBCT_STUDY', 'POSTOP_IMPLANT_CT_SLICES'] } },
+        { code: { contains: 'CBCT' } },
+        { code: { contains: 'DICOM' } },
+        { name: { contains: 'КЛКТ' } },
+        { name: { contains: 'КТ-срезы' } },
+        { name: { contains: 'DICOM' } },
+      ],
+    },
+    select: { id: true },
+  });
+  if (toRemove.length) {
+    const ids = toRemove.map((d) => d.id);
+    const riIds = (
+      await prisma.requirementInstance.findMany({
+        where: { mediaRequirementId: { in: ids } },
+        select: { id: true },
+      })
+    ).map((r) => r.id);
+    if (riIds.length) {
+      await prisma.mediaAssignment.updateMany({
+        where: { requirementInstanceId: { in: riIds } },
+        data: { requirementInstanceId: null },
+      });
+      await prisma.requirementInstance.deleteMany({
+        where: { id: { in: riIds } },
+      });
+    }
+    await prisma.mediaRequirement.deleteMany({ where: { id: { in: ids } } });
+  }
+
+  for (const [oldCode, newCode] of Object.entries(IMPLANT_METHOD_CODE_ALIASES)) {
+    await prisma.surgicalImplantRecord.updateMany({
+      where: { actualMethodCode: oldCode },
+      data: { actualMethodCode: newCode },
+    });
+    await prisma.surgicalImplantRecord.updateMany({
+      where: { plannedMethodCode: oldCode },
+      data: { plannedMethodCode: newCode },
+    });
+    const existing = await prisma.implantPlacementMethod.findUnique({ where: { code: oldCode } });
+    if (existing) {
+      const conflict = await prisma.implantPlacementMethod.findUnique({ where: { code: newCode } });
+      if (conflict) {
+        await prisma.implantPlacementMethod.delete({ where: { id: existing.id } });
+      } else {
+        await prisma.implantPlacementMethod.update({
+          where: { id: existing.id },
+          data: { code: newCode },
+        });
+      }
+    }
+  }
+
   for (const method of IMPLANT_METHODS) {
     await prisma.implantPlacementMethod.upsert({
       where: { code: method.code },
-      update: { nameRu: method.nameRu, sortOrder: method.sortOrder },
+      update: {
+        nameRu: method.nameRu,
+        methodNumber: method.methodNumber,
+        submethodCode: method.submethodCode ?? null,
+        sortOrder: method.sortOrder,
+        jawScope: method.jawScope ?? JawScope.BOTH,
+        isActive: true,
+      },
       create: {
         code: method.code,
         methodNumber: method.methodNumber,
@@ -630,6 +729,27 @@ async function main() {
         isGeneral: method.isGeneral ?? false,
         isActive: true,
         sortOrder: method.sortOrder,
+      },
+    });
+  }
+
+  const IMPLANT_TYPES = [
+    { code: 'BCS', nameRu: 'BCS', brand: 'Ihde Dental', sortOrder: 1 },
+    { code: 'BCS_MULTI_UNIT', nameRu: 'BCS Multi-Unit', brand: 'Ihde Dental', sortOrder: 2 },
+    { code: 'KOS', nameRu: 'KOS', brand: 'Ihde Dental', sortOrder: 3 },
+    { code: 'BCS_SMOOTH', nameRu: 'BCS Smooth', brand: 'Ihde Dental', sortOrder: 4 },
+    { code: 'STRATEGIC_OTHER', nameRu: 'Strategic Implant® (другой)', brand: 'Ihde Dental', sortOrder: 10 },
+  ];
+  for (const t of IMPLANT_TYPES) {
+    await prisma.implantType.upsert({
+      where: { code: t.code },
+      update: { nameRu: t.nameRu, brand: t.brand, sortOrder: t.sortOrder, isActive: true },
+      create: {
+        code: t.code,
+        nameRu: t.nameRu,
+        brand: t.brand,
+        sortOrder: t.sortOrder,
+        isActive: true,
       },
     });
   }
@@ -760,7 +880,7 @@ async function main() {
         implantLabel: 'IMP-01',
         jawScope: JawScope.LOWER,
         side: 'LEFT',
-        actualMethodCode: 'M2_CHIN_AREA_PLACEMENT',
+        actualMethodCode: 'M2',
         status: 'DRAFT',
         createdBy: staffByEmail['surgeon@example.local']!.userId,
         surgeonComment: 'Demo draft implant record',

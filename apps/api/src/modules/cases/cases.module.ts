@@ -7,6 +7,8 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { AuditAction } from '../../common/decorators/metadata.decorators';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { Module } from '@nestjs/common';
+import { StagesModule } from '../stages/stages.module';
+import { StageTemplateSyncService } from '../stages/stage-template-sync.service';
 
 class ParticipantDto {
   @IsUUID()
@@ -90,7 +92,10 @@ function mapCase<T extends Record<string, unknown>>(clinicalCase: T) {
 @ApiTags('cases')
 @Controller('cases')
 export class CasesController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly templateSync: StageTemplateSyncService,
+  ) {}
 
   @Get()
   async findAll(@Query('patientId') patientId?: string, @Query('status') status?: CaseStatus) {
@@ -103,7 +108,11 @@ export class CasesController {
         patient: true,
         protocolVersion: { include: { protocol: true } },
         participants: { include: { staffMember: true } },
-        stages: { include: { stageTemplate: true } },
+        stages: {
+          where: { stageTemplate: { isActive: true } },
+          include: { stageTemplate: true },
+          orderBy: { stageTemplate: { sortOrder: 'asc' } },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -112,12 +121,17 @@ export class CasesController {
 
   @Get(':id')
   async findOne(@Param('id') id: string) {
+    await this.templateSync.ensureCaseAlignedWithTemplate(id);
     const row = await this.prisma.clinicalCase.findUniqueOrThrow({
       where: { id },
       include: {
         patient: true,
         participants: { include: { staffMember: true } },
-        stages: { include: { stageTemplate: true } },
+        stages: {
+          where: { stageTemplate: { isActive: true } },
+          include: { stageTemplate: true },
+          orderBy: { stageTemplate: { sortOrder: 'asc' } },
+        },
         protocolVersion: { include: { protocol: true } },
       },
     });
@@ -125,9 +139,10 @@ export class CasesController {
   }
 
   @Get(':id/stages')
-  listStages(@Param('id') id: string) {
+  async listStages(@Param('id') id: string) {
+    await this.templateSync.ensureCaseAlignedWithTemplate(id);
     return this.prisma.stageInstance.findMany({
-      where: { clinicalCaseId: id },
+      where: { clinicalCaseId: id, stageTemplate: { isActive: true } },
       include: { stageTemplate: true },
       orderBy: { stageTemplate: { sortOrder: 'asc' } },
     });
@@ -242,5 +257,8 @@ export class CasesController {
   }
 }
 
-@Module({ controllers: [CasesController] })
+@Module({
+  imports: [StagesModule],
+  controllers: [CasesController],
+})
 export class CasesModule {}

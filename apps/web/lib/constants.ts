@@ -54,10 +54,6 @@ export const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
 
 export const SURGICAL_RADIOLOGY_BLOCKS = [
   { id: 'optg', title: '1. ОПТГ', description: 'Ортопantomogramma после операции' },
-  { id: 'cbct', title: '2. КТ / КЛКТ', description: 'Объёмное исследование челюстей' },
-  { id: 'implants', title: '3. Реестр имплантатов', description: 'Установленные имплантаты' },
-  { id: 'slices', title: '4. КТ-срезы', description: 'Срезы по каждому имплантату' },
-  { id: 'methods', title: '5. Методы установки', description: 'Strategic Implant® метод/подметод' },
-  { id: 'review', title: '6. Разбор и комментарии', description: 'Имплантаты на разбор' },
-  { id: 'confirmation', title: '7. Подтверждение хирурга', description: 'Финальное подтверждение комплекта' },
+  { id: 'slice-cards', title: '2. Карточки срезов', description: 'Челюсть, зуб, вид, метод, JPG' },
+  { id: 'confirmation', title: '3. Подтверждение хирурга', description: 'Финальное подтверждение комплекта' },
 ] as const;

@@ -170,8 +170,10 @@ export const staffApi = {
 // --- Branches & Protocols ---
 export interface BranchDto {
   id: string;
+  code?: string;
   name: string;
   address?: string | null;
+  isActive?: boolean;
 }
 
 export interface ProtocolVersionDto {
@@ -221,7 +223,16 @@ function normalizeProtocolVersion(v: ProtocolVersionDto): ProtocolVersionDto {
 }
 
 export const adminApi = {
-  branches: () => request<BranchDto[]>('/api/v1/branches'),
+  branches: (params?: { active?: boolean | 'all' }) => {
+    const search = new URLSearchParams();
+    if (params?.active === true) search.set('active', 'true');
+    const qs = search.toString();
+    return request<BranchDto[]>(`/api/v1/branches${qs ? `?${qs}` : ''}`);
+  },
+  createBranch: (data: { code: string; name: string; address?: string }) =>
+    request<BranchDto>('/api/v1/branches', { method: 'POST', body: data }),
+  updateBranch: (id: string, data: Partial<BranchDto>) =>
+    request<BranchDto>(`/api/v1/branches/${id}`, { method: 'PATCH', body: data }),
   protocolVersions: async () => {
     const rows = await request<ProtocolVersionDto[]>('/api/v1/admin/protocol-versions');
     return rows.map(normalizeProtocolVersion);
@@ -255,11 +266,57 @@ export const adminApi = {
       method: 'PATCH',
       body: data,
     }),
-  implantMethods: (params?: { q?: string; jawScope?: string; active?: boolean }) => {
+  deleteMediaRequirement: (id: string) =>
+    request<{ ok: boolean }>(`/api/v1/admin/media-requirements/${id}`, {
+      method: 'DELETE',
+    }),
+  createImplantMethod: (data: {
+    code: string;
+    nameRu: string;
+    methodNumber?: number;
+    submethodCode?: string;
+    jawScope?: string;
+    sortOrder?: number;
+  }) =>
+    request<ImplantMethodDto>('/api/v1/admin/implant-placement-methods', {
+      method: 'POST',
+      body: data,
+    }),
+  updateImplantMethod: (
+    id: string,
+    data: Partial<ImplantMethodDto> & { code?: string },
+  ) =>
+    request<ImplantMethodDto>(`/api/v1/admin/implant-placement-methods/${id}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+  implantTypes: (params?: { active?: boolean | 'all' }) => {
+    const search = new URLSearchParams();
+    if (params?.active === 'all') search.set('active', 'all');
+    else if (params?.active === false) search.set('active', 'false');
+    const qs = search.toString();
+    return request<ImplantTypeDto[]>(`/api/v1/admin/implant-types${qs ? `?${qs}` : ''}`);
+  },
+  createImplantType: (data: {
+    code: string;
+    nameRu: string;
+    brand?: string;
+    description?: string;
+    sortOrder?: number;
+  }) =>
+    request<ImplantTypeDto>('/api/v1/admin/implant-types', { method: 'POST', body: data }),
+  updateImplantType: (id: string, data: Partial<ImplantTypeDto>) =>
+    request<ImplantTypeDto>(`/api/v1/admin/implant-types/${id}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+  implantMethods: (params?: { q?: string; jawScope?: string; active?: boolean | 'all' }) => {
     const search = new URLSearchParams();
     if (params?.q) search.set('q', params.q);
     if (params?.jawScope) search.set('jawScope', params.jawScope);
-    if (params?.active !== undefined) search.set('active', String(params.active));
+    if (params?.active === 'all') search.set('active', 'all');
+    else if (params?.active === false) search.set('active', 'false');
+    else if (params?.active === true) search.set('active', 'true');
     const qs = search.toString();
     return request<ImplantMethodDto[]>(`/api/v1/admin/implant-placement-methods${qs ? `?${qs}` : ''}`);
   },
@@ -278,6 +335,16 @@ export interface ImplantMethodDto {
   shortDescription?: string | null;
   anatomicalRegion?: string | null;
   jawScope: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface ImplantTypeDto {
+  id: string;
+  code: string;
+  nameRu: string;
+  brand?: string | null;
+  description?: string | null;
   isActive: boolean;
   sortOrder: number;
 }
@@ -560,11 +627,13 @@ export interface RadiologyStudyDto {
 
 export interface SurgicalImplantDto {
   id: string;
-  implantNumber: string;
+  implantNumber: number | string;
   implantLabel?: string | null;
   jawScope: string;
   side?: string;
   toothPositionFdi?: string | null;
+  implantTypeId?: string | null;
+  implantType?: ImplantTypeDto | null;
   actualMethodCode?: string | null;
   actualSubmethodCode?: string | null;
   status: string;
@@ -574,6 +643,14 @@ export interface SurgicalImplantDto {
     attachmentType: string;
     surgeonConfirmed: boolean;
     mediaAssetId: string;
+    mediaAsset?: { id: string; originalFileName?: string | null; mimeType?: string | null };
+  }>;
+  radiologyAttachments?: Array<{
+    id: string;
+    attachmentType: string;
+    surgeonConfirmed: boolean;
+    mediaAssetId: string;
+    mediaAsset?: { id: string; originalFileName?: string | null; mimeType?: string | null };
   }>;
 }
 
@@ -594,13 +671,28 @@ export const radiologyApi = {
     request<RadiologyStudyDto[]>(`/api/v1/stages/${stageInstanceId}/radiology-studies`),
   implants: (stageInstanceId: string) =>
     request<SurgicalImplantDto[]>(`/api/v1/stages/${stageInstanceId}/implant-records`),
-  createImplant: (stageInstanceId: string, data: Partial<SurgicalImplantDto>) =>
+  createImplant: (stageInstanceId: string, data: Record<string, unknown>) =>
     request<SurgicalImplantDto>(`/api/v1/stages/${stageInstanceId}/implant-records`, {
       method: 'POST',
       body: data,
     }),
-  updateImplant: (implantId: string, data: Partial<SurgicalImplantDto>) =>
-    request<SurgicalImplantDto>(`/api/v1/implant-records/${implantId}`, { method: 'PATCH', body: data }),
+  updateImplant: (implantId: string, data: Record<string, unknown>) =>
+    request<SurgicalImplantDto>(`/api/v1/implant-records/${implantId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+  deleteImplant: (implantId: string) =>
+    request<{ id: string }>(`/api/v1/implant-records/${implantId}`, { method: 'DELETE' }),
+  attachSlice: (
+    implantId: string,
+    data: { mediaAssetId: string; attachmentType?: string; surgeonConfirmed?: boolean },
+  ) =>
+    request<{ id: string }>(`/api/v1/implants/records/${implantId}/attachments`, {
+      method: 'POST',
+      body: data,
+    }),
+  implantTypes: () => request<ImplantTypeDto[]>('/api/v1/implants/types'),
+  implantMethods: () => request<ImplantMethodDto[]>('/api/v1/implants/methods'),
   surgeonConfirmation: (stageInstanceId: string) =>
     request<SurgeonConfirmationDto | null>(`/api/v1/stages/${stageInstanceId}/surgeon-confirmation`),
   confirmSurgeon: (

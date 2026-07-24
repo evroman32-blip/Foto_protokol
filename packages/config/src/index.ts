@@ -68,7 +68,7 @@ export const envSchema = z.object({
   ALLOWED_PHOTO_FORMATS: listFromEnv(['jpg', 'jpeg', 'png', 'tiff']),
   ALLOWED_VIDEO_FORMATS: listFromEnv(['mp4', 'mov']),
   ALLOWED_DOCUMENT_FORMATS: listFromEnv(['pdf']),
-  ALLOWED_RADIOLOGY_FORMATS: listFromEnv(['jpg', 'jpeg', 'png', 'pdf', 'dcm', 'dicom', 'zip']),
+  ALLOWED_RADIOLOGY_FORMATS: listFromEnv(['jpg', 'jpeg', 'png', 'pdf']),
 
   API_URL: z.string().default('http://localhost:3001'),
   WEB_URL: z.string().default('http://localhost:3000'),

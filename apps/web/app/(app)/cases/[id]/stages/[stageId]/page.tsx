@@ -41,7 +41,6 @@ function mediaTypeLabel(mediaType: string) {
     case 'STL':
       return 'STL';
     case 'RADIOLOGY_IMAGE':
-    case 'RADIOLOGY_STUDY':
       return 'Рентген';
     default:
       return mediaType;
@@ -202,7 +201,7 @@ export default function StageDetailPage() {
         }
       />
 
-      <StageTabs active="main" />
+      <StageTabs active="checklist" stageCode={stage.stageTemplate.code} />
 
       {error ? <div className="alert-error mb-4 mt-4">{error}</div> : null}
       {message ? <div className="mb-4 mt-4 text-sm text-status-success">{message}</div> : null}
@@ -228,7 +227,7 @@ export default function StageDetailPage() {
             {stage.stageTemplate.code === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
               <Link
                 href={`/cases/${caseId}/stages/${stageId}/surgical-radiology`}
-                className="btn-secondary"
+                className="btn-primary"
               >
                 Рентгенология
               </Link>

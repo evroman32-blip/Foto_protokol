@@ -4,22 +4,22 @@ import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/States';
-import { adminApi, type BranchDto } from '@/lib/api';
+import { adminApi, type ImplantTypeDto } from '@/lib/api';
 
 type EditDraft = {
-  name: string;
-  address: string;
+  nameRu: string;
+  brand: string;
 };
 
-export default function AdminBranchesPage() {
-  const [branches, setBranches] = useState<BranchDto[]>([]);
+export default function ImplantTypesPage() {
+  const [items, setItems] = useState<ImplantTypeDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [code, setCode] = useState('');
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
+  const [nameRu, setNameRu] = useState('');
+  const [brand, setBrand] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
 
@@ -27,7 +27,7 @@ export default function AdminBranchesPage() {
     setLoading(true);
     setError(null);
     try {
-      setBranches(await adminApi.branches());
+      setItems(await adminApi.implantTypes({ active: true }));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
     } finally {
@@ -44,15 +44,16 @@ export default function AdminBranchesPage() {
     setError(null);
     setMessage(null);
     try {
-      await adminApi.createBranch({
-        code: code.trim(),
-        name: name.trim(),
-        address: address.trim() || undefined,
+      await adminApi.createImplantType({
+        code,
+        nameRu,
+        brand: brand || undefined,
+        sortOrder: items.length + 1,
       });
       setCode('');
-      setName('');
-      setAddress('');
-      setMessage('Филиал добавлен');
+      setNameRu('');
+      setBrand('');
+      setMessage('Вид имплантата добавлен');
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось сохранить');
@@ -61,9 +62,12 @@ export default function AdminBranchesPage() {
     }
   }
 
-  function startEdit(b: BranchDto) {
-    setEditingId(b.id);
-    setDraft({ name: b.name, address: b.address ?? '' });
+  function startEdit(item: ImplantTypeDto) {
+    setEditingId(item.id);
+    setDraft({
+      nameRu: item.nameRu,
+      brand: item.brand ?? '',
+    });
     setMessage(null);
     setError(null);
   }
@@ -79,11 +83,11 @@ export default function AdminBranchesPage() {
     setError(null);
     setMessage(null);
     try {
-      await adminApi.updateBranch(id, {
-        name: draft.name.trim(),
-        address: draft.address.trim() || null,
+      await adminApi.updateImplantType(id, {
+        nameRu: draft.nameRu.trim(),
+        brand: draft.brand.trim() || null,
       });
-      setMessage('Филиал сохранён');
+      setMessage('Вид имплантата сохранён');
       cancelEdit();
       await load();
     } catch (err) {
@@ -98,8 +102,8 @@ export default function AdminBranchesPage() {
   return (
     <div>
       <PageHeader
-        title="Филиалы"
-        description="Справочник филиалов клиники. Добавление и редактирование."
+        title="Виды имплантатов"
+        description="Справочник для карточек срезов. Добавление и редактирование записей."
       />
       {error ? <div className="alert-error mb-4">{error}</div> : null}
       {message ? <div className="mb-4 text-sm text-status-success">{message}</div> : null}
@@ -111,26 +115,22 @@ export default function AdminBranchesPage() {
             className="input-field"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="MSK-01"
+            placeholder="BCS"
           />
         </div>
         <div>
           <label className="label-field">Название</label>
-          <input className="input-field" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="input-field" value={nameRu} onChange={(e) => setNameRu(e.target.value)} />
         </div>
         <div>
-          <label className="label-field">Адрес</label>
-          <input
-            className="input-field"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-          />
+          <label className="label-field">Бренд</label>
+          <input className="input-field" value={brand} onChange={(e) => setBrand(e.target.value)} />
         </div>
         <div className="flex items-end">
           <button
             type="button"
             className="btn-primary w-full"
-            disabled={busy || !code.trim() || !name.trim()}
+            disabled={busy || !code || !nameRu}
             onClick={() => void handleCreate()}
           >
             Добавить
@@ -144,36 +144,36 @@ export default function AdminBranchesPage() {
             <tr>
               <th>Код</th>
               <th>Название</th>
-              <th>Адрес</th>
+              <th>Бренд</th>
               <th className="w-40">Действия</th>
             </tr>
           </thead>
           <tbody>
-            {branches.map((b) => {
-              const isEditing = editingId === b.id && draft;
+            {items.map((item) => {
+              const isEditing = editingId === item.id && draft;
               return (
-                <tr key={b.id}>
-                  <td className="font-mono align-top">{b.code ?? '—'}</td>
+                <tr key={item.id}>
+                  <td className="font-mono align-top">{item.code}</td>
                   <td className="align-top">
                     {isEditing ? (
                       <input
                         className="input-field min-w-[12rem]"
-                        value={draft.name}
-                        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                        value={draft.nameRu}
+                        onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
                       />
                     ) : (
-                      b.name
+                      item.nameRu
                     )}
                   </td>
                   <td className="align-top">
                     {isEditing ? (
                       <input
                         className="input-field"
-                        value={draft.address}
-                        onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+                        value={draft.brand}
+                        onChange={(e) => setDraft({ ...draft, brand: e.target.value })}
                       />
                     ) : (
-                      b.address ?? '—'
+                      item.brand ?? '—'
                     )}
                   </td>
                   <td className="align-top whitespace-nowrap">
@@ -182,8 +182,8 @@ export default function AdminBranchesPage() {
                         <button
                           type="button"
                           className="btn-primary !px-2 !py-1 text-xs"
-                          disabled={busy || !draft.name.trim()}
-                          onClick={() => void saveEdit(b.id)}
+                          disabled={busy || !draft.nameRu.trim()}
+                          onClick={() => void saveEdit(item.id)}
                         >
                           Сохранить
                         </button>
@@ -201,7 +201,7 @@ export default function AdminBranchesPage() {
                         type="button"
                         className="btn-secondary !px-2 !py-1 text-xs"
                         disabled={busy}
-                        onClick={() => startEdit(b)}
+                        onClick={() => startEdit(item)}
                       >
                         Изменить
                       </button>

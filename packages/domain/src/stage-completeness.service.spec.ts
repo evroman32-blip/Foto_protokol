@@ -239,20 +239,15 @@ describe('StageCompletenessService', () => {
         currentUserIsPrimaryOwner: false,
         doctorConfirmationPresent: true,
         requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
+        radiologyStudies: [{ studyType: 'OPTG', status: 'READY' }],
         implants: [
           {
             id: 'i1',
             implantLabel: 'IMP-01',
             implantNumber: 1,
-            actualMethodCode: 'M2_CHIN_AREA_PLACEMENT',
+            actualMethodCode: 'M2',
             status: 'DOCUMENTED',
-            attachments: [
-              { attachmentType: 'CT_CROSS_SECTION', surgeonConfirmed: true },
-            ],
+            attachments: [],
           },
         ],
         surgeonConfirmation: {
@@ -301,10 +296,7 @@ describe('StageCompletenessService', () => {
         ownerRole: 'SURGEON',
         doctorConfirmationPresent: true,
         requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
+        radiologyStudies: [{ studyType: 'OPTG', status: 'READY' }],
         implants: [],
         surgeonConfirmation: null,
       }),
@@ -407,20 +399,15 @@ describe('StageCompletenessService', () => {
         stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
         ownerRole: 'SURGEON',
         requirements: [],
-        radiologyStudies: [{ studyType: 'CBCT', status: 'READY' }],
+        radiologyStudies: [],
         implants: [
           {
             id: 'i1',
             implantLabel: 'IMP-01',
             implantNumber: 1,
-            actualMethodCode: 'M2_CHIN_AREA_PLACEMENT',
+            actualMethodCode: 'M2',
             status: 'DOCUMENTED',
-            attachments: [
-              {
-                attachmentType: 'CT_CROSS_SECTION',
-                surgeonConfirmed: true,
-              },
-            ],
+            attachments: [],
           },
         ],
         surgeonConfirmation: {
@@ -436,7 +423,7 @@ describe('StageCompletenessService', () => {
     expect(r.blockingReasons).toContain('Отсутствует послеоперационное ОПТГ.');
   });
 
-  it('blocks surgical stage without CBCT', () => {
+  it('blocks implant without method', () => {
     const r = svc.evaluate(
       baseInput({
         stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
@@ -446,48 +433,11 @@ describe('StageCompletenessService', () => {
         implants: [
           {
             id: 'i1',
-            implantLabel: 'IMP-01',
-            implantNumber: 1,
-            actualMethodCode: 'M2_CHIN_AREA_PLACEMENT',
-            status: 'DOCUMENTED',
-            attachments: [
-              { attachmentType: 'CT_CROSS_SECTION', surgeonConfirmed: true },
-            ],
-          },
-        ],
-        surgeonConfirmation: {
-          allImplantsDocumented: true,
-          optgUploaded: true,
-          cbctUploaded: true,
-          allImplantsHaveCtSlices: true,
-          allImplantsHaveMethodSelected: true,
-          hasImplantsForReview: false,
-        },
-      }),
-    );
-    expect(r.blockingReasons).toContain('Отсутствует послеоперационная КТ / КЛКТ.');
-  });
-
-  it('blocks implant without method', () => {
-    const r = svc.evaluate(
-      baseInput({
-        stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
-        ownerRole: 'SURGEON',
-        requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
-        implants: [
-          {
-            id: 'i1',
             implantLabel: 'IMP-03',
             implantNumber: 3,
             actualMethodCode: null,
             status: 'DRAFT',
-            attachments: [
-              { attachmentType: 'CT_CROSS_SECTION', surgeonConfirmed: true },
-            ],
+            attachments: [],
           },
         ],
         surgeonConfirmation: null,
@@ -498,70 +448,26 @@ describe('StageCompletenessService', () => {
     );
   });
 
-  it('blocks implant without confirmed CT slice with exact message', () => {
-    const r = svc.evaluate(
-      baseInput({
-        stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
-        ownerRole: 'SURGEON',
-        requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
-        implants: [
-          {
-            id: 'i1',
-            implantLabel: 'IMP-03',
-            implantNumber: 3,
-            actualMethodCode: 'M4_NERVE_BYPASS',
-            status: 'DOCUMENTED',
-            attachments: [],
-          },
-        ],
-        surgeonConfirmation: null,
-      }),
-    );
-    expect(r.blockingReasons).toContain(
-      'Имплантат IMP-03 не имеет подтверждённого КТ-среза.',
-    );
-  });
-
-  it('requires nerve evidence flag for nerve methods', () => {
+  it('does not require CBCT or DICOM for surgical stage', () => {
     const r = svc.evaluate(
       baseInput({
         stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
         ownerRole: 'SURGEON',
         doctorConfirmationPresent: true,
+        currentUserIsPrimaryOwner: true,
         requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
-        methodsByCode: {
-          M4_NERVE_BYPASS: {
-            code: 'M4_NERVE_BYPASS',
-            requiresNerveRelation: true,
-            requiresSinusRelation: false,
-            requiresNasalFloorRelation: false,
-            requiresPterygoidRelation: false,
-            requiresZygomaticRelation: false,
-            requiresCorticalTarget: false,
-          },
-        },
+        radiologyStudies: [{ studyType: 'OPTG', status: 'READY' }],
         implants: [
           {
             id: 'i1',
             implantLabel: 'IMP-01',
             implantNumber: 1,
-            actualMethodCode: 'M4_NERVE_BYPASS',
+            jawScope: 'UPPER',
+            toothPositionFdi: '16',
+            implantTypeId: 'type-1',
+            actualMethodCode: 'M2',
             status: 'DOCUMENTED',
-            attachments: [
-              {
-                attachmentType: 'CT_CROSS_SECTION',
-                surgeonConfirmed: true,
-                showsNerveRelation: false,
-              },
-            ],
+            attachments: [{ attachmentType: 'CT_CROSS_SECTION', surgeonConfirmed: true }],
           },
         ],
         surgeonConfirmation: {
@@ -574,221 +480,7 @@ describe('StageCompletenessService', () => {
         },
       }),
     );
-    expect(r.blockingReasons).toContain(
-      'Имплантат IMP-01: требуется подтверждение отображения нижнего альвеолярного нерва на КТ-срезе.',
-    );
-  });
-
-  it('requires sinus evidence flag for sinus methods', () => {
-    const r = svc.evaluate(
-      baseInput({
-        stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
-        ownerRole: 'SURGEON',
-        doctorConfirmationPresent: true,
-        requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
-        methodsByCode: {
-          M8A_MAXILLARY_SINUS_FLOOR_CORTICAL_ENGAGEMENT: {
-            code: 'M8A_MAXILLARY_SINUS_FLOOR_CORTICAL_ENGAGEMENT',
-            requiresNerveRelation: false,
-            requiresSinusRelation: true,
-            requiresNasalFloorRelation: false,
-            requiresPterygoidRelation: false,
-            requiresZygomaticRelation: false,
-            requiresCorticalTarget: true,
-          },
-        },
-        implants: [
-          {
-            id: 'i1',
-            implantLabel: 'IMP-02',
-            implantNumber: 2,
-            actualMethodCode: 'M8A_MAXILLARY_SINUS_FLOOR_CORTICAL_ENGAGEMENT',
-            status: 'DOCUMENTED',
-            attachments: [
-              {
-                attachmentType: 'CT_CROSS_SECTION',
-                surgeonConfirmed: true,
-                showsSinusRelation: false,
-              },
-            ],
-          },
-        ],
-        surgeonConfirmation: {
-          allImplantsDocumented: true,
-          optgUploaded: true,
-          cbctUploaded: true,
-          allImplantsHaveCtSlices: true,
-          allImplantsHaveMethodSelected: true,
-          hasImplantsForReview: false,
-        },
-      }),
-    );
-    expect(r.blockingReasons).toContain(
-      'Имплантат IMP-02: требуется подтверждение отображения верхнечелюстной пазухи на КТ-срезе.',
-    );
-  });
-
-  it('requires nasal floor evidence flag for nasal floor methods', () => {
-    const r = svc.evaluate(
-      baseInput({
-        stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
-        ownerRole: 'SURGEON',
-        doctorConfirmationPresent: true,
-        requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
-        methodsByCode: {
-          M7A_NASAL_FLOOR_CORTICAL_ENGAGEMENT: {
-            code: 'M7A_NASAL_FLOOR_CORTICAL_ENGAGEMENT',
-            requiresNerveRelation: false,
-            requiresSinusRelation: false,
-            requiresNasalFloorRelation: true,
-            requiresPterygoidRelation: false,
-            requiresZygomaticRelation: false,
-            requiresCorticalTarget: true,
-          },
-        },
-        implants: [
-          {
-            id: 'i1',
-            implantLabel: 'IMP-04',
-            implantNumber: 4,
-            actualMethodCode: 'M7A_NASAL_FLOOR_CORTICAL_ENGAGEMENT',
-            status: 'DOCUMENTED',
-            attachments: [
-              {
-                attachmentType: 'CT_CROSS_SECTION',
-                surgeonConfirmed: true,
-                showsNasalFloorRelation: false,
-              },
-            ],
-          },
-        ],
-        surgeonConfirmation: {
-          allImplantsDocumented: true,
-          optgUploaded: true,
-          cbctUploaded: true,
-          allImplantsHaveCtSlices: true,
-          allImplantsHaveMethodSelected: true,
-          hasImplantsForReview: false,
-        },
-      }),
-    );
-    expect(r.blockingReasons).toContain(
-      'Имплантат IMP-04: требуется подтверждение отображения дна полости носа на КТ-срезе.',
-    );
-  });
-
-  it('requires pterygoid evidence flag for pterygoid methods', () => {
-    const r = svc.evaluate(
-      baseInput({
-        stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
-        ownerRole: 'SURGEON',
-        doctorConfirmationPresent: true,
-        requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
-        methodsByCode: {
-          M10_TUBERO_PTERYGOID: {
-            code: 'M10_TUBERO_PTERYGOID',
-            requiresNerveRelation: false,
-            requiresSinusRelation: false,
-            requiresNasalFloorRelation: false,
-            requiresPterygoidRelation: true,
-            requiresZygomaticRelation: false,
-            requiresCorticalTarget: true,
-          },
-        },
-        implants: [
-          {
-            id: 'i1',
-            implantLabel: 'IMP-05',
-            implantNumber: 5,
-            actualMethodCode: 'M10_TUBERO_PTERYGOID',
-            status: 'DOCUMENTED',
-            attachments: [
-              {
-                attachmentType: 'CT_CROSS_SECTION',
-                surgeonConfirmed: true,
-                showsPterygoidRelation: false,
-              },
-            ],
-          },
-        ],
-        surgeonConfirmation: {
-          allImplantsDocumented: true,
-          optgUploaded: true,
-          cbctUploaded: true,
-          allImplantsHaveCtSlices: true,
-          allImplantsHaveMethodSelected: true,
-          hasImplantsForReview: false,
-        },
-      }),
-    );
-    expect(r.blockingReasons).toContain(
-      'Имплантат IMP-05: требуется подтверждение отображения бугорно-крыловидной зоны на КТ-срезе.',
-    );
-  });
-
-  it('requires zygomatic evidence flag for zygomatic methods', () => {
-    const r = svc.evaluate(
-      baseInput({
-        stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
-        ownerRole: 'SURGEON',
-        doctorConfirmationPresent: true,
-        requirements: [],
-        radiologyStudies: [
-          { studyType: 'OPTG', status: 'READY' },
-          { studyType: 'CBCT', status: 'READY' },
-        ],
-        methodsByCode: {
-          M12_ZYGOMATIC_IMPLANT: {
-            code: 'M12_ZYGOMATIC_IMPLANT',
-            requiresNerveRelation: false,
-            requiresSinusRelation: false,
-            requiresNasalFloorRelation: false,
-            requiresPterygoidRelation: false,
-            requiresZygomaticRelation: true,
-            requiresCorticalTarget: true,
-          },
-        },
-        implants: [
-          {
-            id: 'i1',
-            implantLabel: 'IMP-06',
-            implantNumber: 6,
-            actualMethodCode: 'M12_ZYGOMATIC_IMPLANT',
-            status: 'DOCUMENTED',
-            attachments: [
-              {
-                attachmentType: 'CT_CROSS_SECTION',
-                surgeonConfirmed: true,
-                showsZygomaticRelation: false,
-              },
-            ],
-          },
-        ],
-        surgeonConfirmation: {
-          allImplantsDocumented: true,
-          optgUploaded: true,
-          cbctUploaded: true,
-          allImplantsHaveCtSlices: true,
-          allImplantsHaveMethodSelected: true,
-          hasImplantsForReview: false,
-        },
-      }),
-    );
-    expect(r.blockingReasons).toContain(
-      'Имплантат IMP-06: требуется подтверждение отображения скуловой зоны на КТ-срезе.',
-    );
+    expect(r.blockingReasons.some((b) => b.includes('КЛКТ') || b.includes('DICOM'))).toBe(false);
   });
 
   it('blocks JAW_RELATION until surgical closed', () => {

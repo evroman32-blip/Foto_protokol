@@ -15,15 +15,19 @@ import {
 import { PrismaService } from '../../common/services/prisma.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { StageCompletenessApiService } from './stage-completeness-api.service';
+import { StageTemplateSyncService } from './stage-template-sync.service';
 
 @Injectable()
 export class StagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly completenessService: StageCompletenessApiService,
+    private readonly templateSync: StageTemplateSyncService,
   ) {}
 
   async findOne(stageId: string) {
+    await this.templateSync.ensureRequirementInstancesForStage(stageId);
+
     const stage = await this.prisma.stageInstance.findUnique({
       where: { id: stageId },
       include: {
@@ -164,6 +168,8 @@ export class StagesService {
       where: { id: stageId },
       data: { status: StageInstanceStatus.REOPENED, closedAt: null },
     });
+
+    await this.templateSync.ensureRequirementInstancesForStage(stageId);
 
     return { stageInstanceId: stageId, reason, reopenedBy: user.id };
   }

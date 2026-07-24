@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MediaViewer } from '@/components/MediaViewer';
+import { ImplantSliceCardsForm } from '@/components/ImplantSliceCardsForm';
 import { PageHeader } from '@/components/PageHeader';
 import { StageTabs } from '@/components/StageTabs';
 import { LoadingState } from '@/components/States';
@@ -18,25 +19,47 @@ import {
 
 type MediaTab = 'photo' | 'video' | 'docs' | 'stl' | 'radiology' | 'checklist' | 'history';
 
-const TAB_TO_MEDIA: Record<string, string | null> = {
-  photo: 'PHOTO',
-  video: 'VIDEO',
-  docs: 'DOCUMENT',
-  stl: 'STL',
-  radiology: null,
+const TAB_MEDIA_TYPES: Record<MediaTab, string[] | null> = {
+  photo: ['PHOTO'],
+  video: ['VIDEO'],
+  docs: ['DOCUMENT'],
+  stl: ['STL'],
+  radiology: ['RADIOLOGY_IMAGE', 'RADIOLOGY'],
   checklist: null,
   history: null,
 };
+
+const TAB_PRIORITY: MediaTab[] = ['photo', 'radiology', 'stl', 'video', 'docs'];
+
+function isUploadableMediaType(mediaType: string) {
+  return ![
+    'STRUCTURED_DATA',
+    'STRUCTURED_CONFIRMATION',
+    'RADIOLOGY_STUDY',
+    'DICOM_SERIES',
+  ].includes(mediaType);
+}
+
+function pickDefaultTab(requirements: RequirementInstanceDto[]): MediaTab {
+  const types = new Set(
+    requirements
+      .filter((r) => isUploadableMediaType(r.mediaRequirement.mediaType))
+      .map((r) => r.mediaRequirement.mediaType),
+  );
+  for (const tab of TAB_PRIORITY) {
+    const allowed = TAB_MEDIA_TYPES[tab];
+    if (allowed?.some((t) => types.has(t))) return tab;
+  }
+  return 'photo';
+}
 
 const ACCEPT_BY_TYPE: Record<string, string> = {
   PHOTO: 'image/jpeg,image/png,image/tiff,image/webp,.jpg,.jpeg,.png,.tif,.tiff',
   VIDEO: 'video/mp4,video/quicktime,.mp4,.mov',
   DOCUMENT: 'application/pdf,.pdf,.stl,model/stl,application/sla',
   STL: '.stl,model/stl,application/sla,application/vnd.ms-pki.stl,model/x.stl-ascii,model/x.stl-binary',
-  RADIOLOGY: 'image/*,application/pdf,.dcm,.dicom,.zip',
-  RADIOLOGY_IMAGE: 'image/*,application/pdf,.dcm,.dicom,.zip',
-  RADIOLOGY_STUDY: 'image/*,application/pdf,.dcm,.dicom,.zip',
-  DICOM_SERIES: '.dcm,.dicom,.zip,application/dicom',
+  RADIOLOGY: 'image/*,application/pdf',
+  RADIOLOGY_IMAGE: 'image/*,application/pdf',
 };
 
 function mediaTypeLabel(mediaType: string) {
@@ -51,10 +74,7 @@ function mediaTypeLabel(mediaType: string) {
       return 'STL';
     case 'RADIOLOGY':
     case 'RADIOLOGY_IMAGE':
-    case 'RADIOLOGY_STUDY':
       return 'Рентген';
-    case 'DICOM_SERIES':
-      return 'DICOM';
     default:
       return mediaType;
   }
@@ -80,11 +100,14 @@ function assetsForRequirement(assets: MediaAssetDto[], requirementInstanceId: st
 
 export default function StageUploadPage() {
   const { id: caseId, stageId } = useParams<{ id: string; stageId: string }>();
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams.get('tab') as MediaTab | null;
   const [requirements, setRequirements] = useState<RequirementInstanceDto[]>([]);
   const [assets, setAssets] = useState<MediaAssetDto[]>([]);
   const [filesByReq, setFilesByReq] = useState<Record<string, File | null>>({});
   const [slotStatus, setSlotStatus] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<MediaTab>('photo');
+  const [activeTab, setActiveTab] = useState<MediaTab>(tabFromUrl && TAB_MEDIA_TYPES[tabFromUrl] !== undefined ? tabFromUrl : 'photo');
+  const [stageCode, setStageCode] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
@@ -97,6 +120,7 @@ export default function StageUploadPage() {
     setError(null);
     try {
       const stage = await stagesApi.get(stageId);
+      setStageCode(stage.stageTemplate.code);
       const reqs = [...(stage.requirementInstances ?? [])]
         .filter((r) => r.mediaRequirement.isActive !== false)
         .sort(
@@ -104,22 +128,51 @@ export default function StageUploadPage() {
         );
       setRequirements(reqs);
       setAssets(stage.mediaAssets ?? []);
+      setActiveTab((prev) => {
+        if (tabFromUrl && TAB_MEDIA_TYPES[tabFromUrl] != null) return tabFromUrl;
+        const preferred = pickDefaultTab(reqs);
+        const prevTypes = TAB_MEDIA_TYPES[prev];
+        const prevHas =
+          prevTypes?.some((t) =>
+            reqs.some(
+              (r) =>
+                isUploadableMediaType(r.mediaRequirement.mediaType) &&
+                r.mediaRequirement.mediaType === t,
+            ),
+          ) ?? false;
+        return prevHas ? prev : preferred;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить требования этапа');
     } finally {
       setLoading(false);
     }
-  }, [stageId]);
+  }, [stageId, tabFromUrl]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const tabMediaTypes = TAB_MEDIA_TYPES[activeTab];
+  const canUploadOnTab = tabMediaTypes != null;
+
   const visibleRequirements = useMemo(() => {
-    const mediaType = TAB_TO_MEDIA[activeTab];
-    if (!mediaType) return requirements;
-    return requirements.filter((r) => r.mediaRequirement.mediaType === mediaType);
-  }, [requirements, activeTab]);
+    if (!tabMediaTypes) return [];
+    return requirements.filter(
+      (r) =>
+        isUploadableMediaType(r.mediaRequirement.mediaType) &&
+        tabMediaTypes.includes(r.mediaRequirement.mediaType),
+    );
+  }, [requirements, tabMediaTypes]);
+
+  const tabsWithRequirements = useMemo(() => {
+    const types = new Set(
+      requirements
+        .filter((r) => isUploadableMediaType(r.mediaRequirement.mediaType))
+        .map((r) => r.mediaRequirement.mediaType),
+    );
+    return TAB_PRIORITY.filter((tab) => TAB_MEDIA_TYPES[tab]?.some((t) => types.has(t)));
+  }, [requirements]);
 
   const pendingCount = useMemo(
     () => Object.values(filesByReq).filter(Boolean).length,
@@ -127,10 +180,10 @@ export default function StageUploadPage() {
   );
 
   const typeAssetsSorted = useMemo(() => {
-    const mediaType = TAB_TO_MEDIA[activeTab];
-    const list = mediaType ? assets.filter((a) => a.mediaType === mediaType) : assets;
+    if (!tabMediaTypes) return [];
+    const list = assets.filter((a) => tabMediaTypes.includes(a.mediaType));
     return [...list].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
-  }, [assets, activeTab]);
+  }, [assets, tabMediaTypes]);
 
   function setFile(requirementInstanceId: string, file: File | null) {
     setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: file }));
@@ -300,20 +353,62 @@ export default function StageUploadPage() {
         }
       />
 
-      <StageTabs active={activeTab} onChange={(tab) => setActiveTab(tab as MediaTab)} />
+      <StageTabs active={activeTab} stageCode={stageCode} />
 
       {error ? <div className="alert-error mb-4 mt-4">{error}</div> : null}
       {message ? <div className="mb-4 mt-4 text-sm text-status-success">{message}</div> : null}
 
-      {activeTab === 'radiology' || activeTab === 'checklist' || activeTab === 'history' ? (
+      {activeTab === 'checklist' || activeTab === 'history' ? (
         <div className="card mt-4 text-sm text-gray-600">
-          Для этой вкладки используйте соответствующие разделы этапа (рентгенология / чек-лист / история).
+          Для этой вкладки используйте соответствующие разделы этапа (чек-лист / история).
         </div>
       ) : null}
 
-      {TAB_TO_MEDIA[activeTab] && visibleRequirements.length === 0 ? (
+      {activeTab === 'radiology' && stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
+        <div className="mt-4">
+          <div className="card mb-4 text-sm text-gray-600">
+            Здесь загружаются ОПТГ и карточки срезов имплантатов. Сводка и подтверждение хирурга — во
+            вкладке «Отчёт».
+          </div>
+          <ImplantSliceCardsForm stageId={stageId} />
+        </div>
+      ) : null}
+
+      {activeTab === 'radiology' &&
+      stageCode !== 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' &&
+      requirements.some(
+        (r) =>
+          r.mediaRequirement.mediaType === 'STRUCTURED_CONFIRMATION' ||
+          r.mediaRequirement.mediaType === 'STRUCTURED_DATA',
+      ) ? (
+        <div className="card mt-4 text-sm text-gray-600">
+          Ниже — загрузка снимков и исследований по положениям протокола.
+        </div>
+      ) : null}
+
+      {canUploadOnTab && visibleRequirements.length === 0 ? (
         <div className="card mt-4 text-sm text-gray-600">
           Для этой вкладки в шаблоне этапа нет требований к материалам.
+          {tabsWithRequirements.length > 0 ? (
+            <span>
+              {' '}
+              Материалы этапа доступны во вкладках:{' '}
+              {tabsWithRequirements
+                .map((t) =>
+                  t === 'photo'
+                    ? 'Фото'
+                    : t === 'video'
+                      ? 'Видео'
+                      : t === 'docs'
+                        ? 'Документы'
+                        : t === 'stl'
+                          ? 'STL'
+                          : 'Рентгенология',
+                )
+                .join(', ')}
+              .
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -419,7 +514,7 @@ export default function StageUploadPage() {
         })}
       </div>
 
-      {TAB_TO_MEDIA[activeTab] && visibleRequirements.length > 0 ? (
+      {canUploadOnTab && visibleRequirements.length > 0 ? (
         <div className="card mt-4 max-w-xl space-y-3">
           {progress !== null ? (
             <div>
@@ -448,7 +543,7 @@ export default function StageUploadPage() {
                 className="btn-secondary"
                 onClick={() => setViewer({ assets: typeAssetsSorted, index: 0 })}
               >
-                Просмотреть все «{mediaTypeLabel(TAB_TO_MEDIA[activeTab] ?? '')}» ({typeAssetsSorted.length})
+                Просмотреть загруженные ({typeAssetsSorted.length})
               </button>
               <button
                 type="button"

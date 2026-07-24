@@ -43,6 +43,7 @@ const NAV: NavGroup[] = [
       { href: '/admin/branches', label: 'Филиалы', prefix: '/admin/branches' },
       { href: '/admin/protocols', label: 'Протоколы', prefix: '/admin/protocols' },
       { href: '/admin/implant-placement-methods', label: 'Методы имплантации' },
+      { href: '/admin/implant-types', label: 'Виды имплантатов' },
       { href: '/admin/settings', label: 'Настройки' },
       { href: '/admin/yandex-ai', label: 'Yandex AI' },
       { href: '/admin/stoma1c', label: '1С:Стоматология' },

@@ -171,7 +171,7 @@ export const PREOP_ADDITIONAL_MEDIA = 'PREOP_ADDITIONAL_MEDIA';
 export const FF_ADDITIONAL_MEDIA = 'FF_ADDITIONAL_MEDIA';
 
 export const SURGEON_RADIOLOGY_CONFIRMATION_TEXT =
-  'ОПТГ, КТ/КЛКТ и срезы по каждому установленному имплантату загружены и проверены. Каждый имплантат привязан к фактически применённому методу или подметоду установки Strategic Implant®. Материалы позволяют передать пациента на следующий ортопедический этап либо требуют отдельного разбора, указанного в комментарии.';
+  'Послеоперационное ОПТГ загружено и проверено. По каждому имплантату заполнена карточка (челюсть, зуб, вид, метод) и загружен JPG-срез с экрана КТ. Материалы позволяют передать пациента на следующий ортопедический этап либо требуют отдельного разбора, указанного в комментарии.';
 
 export const ORTHODONTIC_CONFIRMATION_TEXT =
   'Фотографии и видеоматериалы относятся к указанному пациенту и клиническому этапу. Распределение проверено. Комплект соответствует фактически выполненному лечению.';
@@ -245,6 +245,9 @@ export interface ImplantRecordSnapshot {
   id: string;
   implantLabel: string;
   implantNumber: number;
+  jawScope?: string | null;
+  toothPositionFdi?: string | null;
+  implantTypeId?: string | null;
   actualMethodCode: string | null;
   status: string;
   attachments: ImplantAttachmentSnapshot[];

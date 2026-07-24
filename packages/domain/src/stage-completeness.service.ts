@@ -5,7 +5,6 @@ import {
   StageClosurePermissionResult,
   StageCompletenessInput,
   UserRole,
-  VALID_CT_ATTACHMENT_TYPES,
   ParticipantRole,
 } from '@mandarin/contracts';
 
@@ -194,9 +193,24 @@ export class StageCompletenessService {
         continue;
       }
 
-      const confirmedCount = this.countConfirmedForRequirement(input, req.code);
+      // КТ/КЛКТ и DICOM из протокола исключены — не блокируем комплектность
+      if (
+        req.mediaType === 'RADIOLOGY_STUDY' ||
+        req.mediaType === 'DICOM_SERIES' ||
+        req.code === 'POSTOP_CBCT_STUDY' ||
+        req.code === 'POSTOP_IMPLANT_CT_SLICES' ||
+        req.code.includes('CBCT') ||
+        req.code.includes('DICOM')
+      ) {
+        continue;
+      }
 
-      if (confirmedCount < req.minCount) {
+      const confirmedCount = this.countConfirmedForRequirement(input, req.code);
+      const satisfiedViaStudy =
+        req.code === 'POSTOP_OPTG' &&
+        (input.radiologyStudies ?? []).some((s) => s.studyType === 'OPTG');
+
+      if (confirmedCount < req.minCount && !satisfiedViaStudy) {
         pushUnique(result.missingRequirements, req.code);
 
         if (req.code === 'FP_VIDEO_SPEECH') {
@@ -211,8 +225,6 @@ export class StageCompletenessService {
           );
         } else if (req.code === 'POSTOP_OPTG') {
           pushUnique(result.blockingReasons, 'Отсутствует послеоперационное ОПТГ.');
-        } else if (req.code === 'POSTOP_CBCT_STUDY') {
-          pushUnique(result.blockingReasons, 'Отсутствует послеоперационная КТ / КЛКТ.');
         } else {
           pushUnique(
             result.blockingReasons,
@@ -316,18 +328,13 @@ export class StageCompletenessService {
     result: CompletenessResult,
   ) {
     const studies = input.radiologyStudies ?? [];
-    const hasOptg = studies.some((s) => s.studyType === 'OPTG');
-    const hasCbct = studies.some(
-      (s) => s.studyType === 'CBCT' || s.studyType === 'CT',
-    );
+    const hasOptgStudy = studies.some((s) => s.studyType === 'OPTG');
+    const hasOptgMedia = this.countConfirmedForRequirement(input, 'POSTOP_OPTG') > 0;
+    const hasOptg = hasOptgStudy || hasOptgMedia;
 
     if (!hasOptg) {
       pushUnique(result.missingRadiology, 'OPTG');
       pushUnique(result.blockingReasons, 'Отсутствует послеоперационное ОПТГ.');
-    }
-    if (!hasCbct) {
-      pushUnique(result.missingRadiology, 'CBCT');
-      pushUnique(result.blockingReasons, 'Отсутствует послеоперационная КТ / КЛКТ.');
     }
 
     const implants = input.implants ?? [];
@@ -340,69 +347,40 @@ export class StageCompletenessService {
     }
 
     for (const implant of implants) {
+      const label = implant.implantLabel || `#${implant.implantNumber}`;
+      if (!implant.jawScope || (implant.jawScope !== 'UPPER' && implant.jawScope !== 'LOWER')) {
+        pushUnique(result.missingImplantRecords, `${label}:JAW`);
+        pushUnique(result.blockingReasons, `Имплантат ${label}: не указана челюсть.`);
+      }
+      if (!implant.toothPositionFdi) {
+        pushUnique(result.missingImplantRecords, `${label}:TOOTH`);
+        pushUnique(result.blockingReasons, `Имплантат ${label}: не указан номер зуба.`);
+      }
+      if (!implant.implantTypeId) {
+        pushUnique(result.missingImplantRecords, `${label}:TYPE`);
+        pushUnique(result.blockingReasons, `Имплантат ${label}: не выбран вид имплантата.`);
+      }
       if (!implant.actualMethodCode) {
-        pushUnique(result.missingImplantRecords, implant.implantLabel);
+        pushUnique(result.missingImplantRecords, label);
         pushUnique(
           result.blockingReasons,
-          `Имплантат ${implant.implantLabel} не привязан к методу установки.`,
+          `Имплантат ${label} не привязан к методу установки.`,
         );
       }
 
-      const confirmedSlice = implant.attachments.find(
-        (a) =>
-          a.surgeonConfirmed &&
-          VALID_CT_ATTACHMENT_TYPES.includes(a.attachmentType as (typeof VALID_CT_ATTACHMENT_TYPES)[number]),
-      );
-      if (!confirmedSlice) {
-        pushUnique(result.missingImplantRecords, `${implant.implantLabel}:CT`);
+      const hasJpgSlice = implant.attachments.some((a) => a.surgeonConfirmed);
+      if (!hasJpgSlice) {
+        pushUnique(result.missingImplantRecords, `${label}:SLICE`);
         pushUnique(
           result.blockingReasons,
-          `Имплантат ${implant.implantLabel} не имеет подтверждённого КТ-среза.`,
+          `Имплантат ${label}: не загружен JPG-срез с экрана КТ.`,
         );
-      }
-
-      const method = implant.actualMethodCode
-        ? input.methodsByCode?.[implant.actualMethodCode]
-        : undefined;
-
-      if (method && confirmedSlice) {
-        const label = implant.implantLabel;
-        if (method.requiresNerveRelation && confirmedSlice.showsNerveRelation !== true) {
-          pushUnique(
-            result.blockingReasons,
-            `Имплантат ${label}: требуется подтверждение отображения нижнего альвеолярного нерва на КТ-срезе.`,
-          );
-        }
-        if (method.requiresSinusRelation && confirmedSlice.showsSinusRelation !== true) {
-          pushUnique(
-            result.blockingReasons,
-            `Имплантат ${label}: требуется подтверждение отображения верхнечелюстной пазухи на КТ-срезе.`,
-          );
-        }
-        if (method.requiresNasalFloorRelation && confirmedSlice.showsNasalFloorRelation !== true) {
-          pushUnique(
-            result.blockingReasons,
-            `Имплантат ${label}: требуется подтверждение отображения дна полости носа на КТ-срезе.`,
-          );
-        }
-        if (method.requiresPterygoidRelation && confirmedSlice.showsPterygoidRelation !== true) {
-          pushUnique(
-            result.blockingReasons,
-            `Имплантат ${label}: требуется подтверждение отображения бугорно-крыловидной зоны на КТ-срезе.`,
-          );
-        }
-        if (method.requiresZygomaticRelation && confirmedSlice.showsZygomaticRelation !== true) {
-          pushUnique(
-            result.blockingReasons,
-            `Имплантат ${label}: требуется подтверждение отображения скуловой зоны на КТ-срезе.`,
-          );
-        }
       }
 
       if (implant.status === 'NEEDS_REVIEW') {
         pushUnique(
           result.blockingReasons,
-          `Имплантат ${implant.implantLabel} требует разбора руководителя/главного врача.`,
+          `Имплантат ${label} требует разбора руководителя/главного врача.`,
         );
       }
     }
@@ -414,8 +392,12 @@ export class StageCompletenessService {
         'Хирург не подтвердил рентгенологический комплект.',
       );
     } else {
-      if (!conf.allImplantsDocumented || !conf.optgUploaded || !conf.cbctUploaded ||
-          !conf.allImplantsHaveCtSlices || !conf.allImplantsHaveMethodSelected) {
+      if (
+        !conf.allImplantsDocumented ||
+        !conf.optgUploaded ||
+        !conf.allImplantsHaveMethodSelected ||
+        !conf.allImplantsHaveCtSlices
+      ) {
         pushUnique(
           result.blockingReasons,
           'Хирург не подтвердил рентгенологический комплект.',

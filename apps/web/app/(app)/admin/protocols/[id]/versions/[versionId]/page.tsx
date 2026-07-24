@@ -19,8 +19,6 @@ const MEDIA_TYPES = [
   { value: 'DOCUMENT', label: 'Документ' },
   { value: 'STL', label: 'STL (3D-модель)' },
   { value: 'RADIOLOGY_IMAGE', label: 'Рентген-изображение' },
-  { value: 'RADIOLOGY_STUDY', label: 'Рентген-исследование' },
-  { value: 'DICOM_SERIES', label: 'DICOM' },
 ];
 
 type LocalRequirement = {
@@ -63,6 +61,27 @@ function fromServer(req: MediaRequirementAdminDto): LocalRequirement {
     isActive: req.isActive !== false,
     dirty: false,
   };
+}
+
+function isRemovedCtDicomRequirement(req: {
+  code?: string;
+  name?: string;
+  mediaType?: string;
+}) {
+  const code = (req.code ?? '').toUpperCase();
+  const name = req.name ?? '';
+  const mediaType = req.mediaType ?? '';
+  return (
+    mediaType === 'RADIOLOGY_STUDY' ||
+    mediaType === 'DICOM_SERIES' ||
+    code === 'POSTOP_CBCT_STUDY' ||
+    code === 'POSTOP_IMPLANT_CT_SLICES' ||
+    code.includes('CBCT') ||
+    code.includes('DICOM') ||
+    name.includes('КЛКТ') ||
+    name.includes('КТ-срезы') ||
+    name.includes('DICOM')
+  );
 }
 
 function mediaTypeLabel(value: string) {
@@ -225,6 +244,7 @@ export default function ProtocolVersionPage() {
 
   function hydrateStage(template: StageTemplateAdminDto) {
     const saved = [...(template.mediaRequirements ?? [])]
+      .filter((r) => !isRemovedCtDicomRequirement(r))
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map(fromServer);
     setItems(saved.length ? saved : [emptyLocal(1)]);
@@ -269,6 +289,28 @@ export default function ProtocolVersionPage() {
       return next.length ? next : [emptyLocal(1)];
     });
     if (editingKey === key) setEditingKey(null);
+  }
+
+  async function removeItem(item: LocalRequirement) {
+    if (!item.existingId) {
+      removeNewItem(item.key);
+      return;
+    }
+    if (!window.confirm(`Удалить положение «${item.name || item.code}» из шаблона?`)) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await adminApi.deleteMediaRequirement(item.existingId);
+      setItems((prev) => prev.filter((i) => i.key !== item.key));
+      if (editingKey === item.key) setEditingKey(null);
+      setMessage('Положение удалено из шаблона');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить положение');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function startEdit(key: string) {
@@ -352,7 +394,7 @@ export default function ProtocolVersionPage() {
     <div>
       <PageHeader
         title={version?.protocolName ?? 'Протокол'}
-        description={`Версия ${version?.version ?? ''} · статус ${version?.status ?? ''} · правки шаблона применяются к новым случаям; закрытые случаи не меняются`}
+        description={`Версия ${version?.version ?? ''} · статус ${version?.status ?? ''} · активные положения шаблона сразу видны в загрузке открытых случаев; закрытые случаи не меняются`}
         actions={
           <Link href="/admin/protocols" className="btn-secondary">
             К списку протоколов
@@ -472,15 +514,14 @@ export default function ProtocolVersionPage() {
                                   >
                                     {isEditing ? 'Закрыть' : 'Изменить'}
                                   </button>
-                                  {!item.existingId ? (
-                                    <button
-                                      type="button"
-                                      className="btn-secondary !px-2 !py-1 text-xs"
-                                      onClick={() => removeNewItem(item.key)}
-                                    >
-                                      Удалить
-                                    </button>
-                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className="btn-secondary !px-2 !py-1 text-xs text-status-danger"
+                                    disabled={saving}
+                                    onClick={() => void removeItem(item)}
+                                  >
+                                    Удалить
+                                  </button>
                                 </div>
                               </div>
 

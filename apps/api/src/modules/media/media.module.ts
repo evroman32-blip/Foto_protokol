@@ -113,17 +113,63 @@ export class MediaController {
 
   @Post(':id/assignment')
   @AuditAction('media.assign')
-  assign(@Param('id') id: string, @Body() dto: AssignMediaDto) {
-    return this.prisma.mediaAssignment.create({
+  async assign(@Param('id') id: string, @Body() dto: AssignMediaDto) {
+    const asset = await this.prisma.mediaAsset.findUniqueOrThrow({
+      where: { id },
+      include: { stageInstance: true },
+    });
+
+    const assignment = await this.prisma.mediaAssignment.create({
       data: {
         mediaAssetId: id,
         requirementInstanceId: dto.requirementInstanceId ?? null,
         requirementCode: dto.requirementCode ?? null,
         source: dto.source,
-        status: dto.source === AssignmentSource.AI ? AssignmentStatus.SUGGESTED : AssignmentStatus.CONFIRMED,
+        status:
+          dto.source === AssignmentSource.AI
+            ? AssignmentStatus.SUGGESTED
+            : AssignmentStatus.CONFIRMED,
         confirmedAt: dto.source === AssignmentSource.DOCTOR ? new Date() : null,
       },
     });
+
+    if (dto.source === AssignmentSource.DOCTOR) {
+      await this.prisma.mediaAsset.update({
+        where: { id },
+        data: { status: 'DOCTOR_CONFIRMED' },
+      });
+    }
+
+    // Связать загрузку ОПТГ с RadiologyStudy (КТ/КЛКТ исключены)
+    const code = dto.requirementCode ?? null;
+    if (code === 'POSTOP_OPTG') {
+      const studyType = 'OPTG';
+      const existing = await this.prisma.radiologyStudy.findFirst({
+        where: {
+          stageInstanceId: asset.stageInstanceId,
+          studyType,
+        },
+      });
+      if (!existing) {
+        await this.prisma.radiologyStudy.create({
+          data: {
+            clinicalCaseId: asset.stageInstance.clinicalCaseId,
+            stageInstanceId: asset.stageInstanceId,
+            studyType,
+            mainMediaAssetId: asset.id,
+            status: 'READY',
+            uploadedBy: asset.uploadedBy,
+          },
+        });
+      } else if (!existing.mainMediaAssetId) {
+        await this.prisma.radiologyStudy.update({
+          where: { id: existing.id },
+          data: { mainMediaAssetId: asset.id, status: 'READY' },
+        });
+      }
+    }
+
+    return assignment;
   }
 
   @Post(':id/confirm')

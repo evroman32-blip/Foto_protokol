@@ -641,6 +641,20 @@ model ImplantPlacementMethod {
   updatedAt                  DateTime @updatedAt
 }
 
+/// Справочник видов/систем имплантатов (заполняется админом)
+model ImplantType {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  nameRu      String
+  brand       String?
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  records     SurgicalImplantRecord[]
+}
+
 model SurgicalImplantRecord {
   id                         String              @id @default(uuid())
   clinicalCaseId             String
@@ -653,6 +667,8 @@ model SurgicalImplantRecord {
   side                       ImplantSide         @default(UNKNOWN)
   toothPositionFdi           String?
   regionDescription          String?
+  implantTypeId              String?
+  implantType                ImplantType?        @relation(fields: [implantTypeId], references: [id])
   implantSystem              String?
   implantModel               String?
   implantDiameter            String?
@@ -672,6 +688,7 @@ model SurgicalImplantRecord {
 
   @@unique([stageInstanceId, implantNumber])
   @@index([stageInstanceId])
+  @@index([implantTypeId])
 }
 
 model ImplantRadiologyAttachment {

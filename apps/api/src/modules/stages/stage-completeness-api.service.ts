@@ -15,14 +15,21 @@ import {
 } from '@mandarin/contracts';
 import { getEnv, isStoma1cIntegrated } from '@mandarin/config';
 import { PrismaService } from '../../common/services/prisma.service';
+import { StageTemplateSyncService } from './stage-template-sync.service';
 
 @Injectable()
 export class StageCompletenessApiService {
   private readonly domainService = new StageCompletenessService();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly templateSync: StageTemplateSyncService,
+  ) {}
 
   async buildInput(stageInstanceId: string): Promise<StageCompletenessInput> {
+    await this.templateSync.ensureRequirementInstancesForStage(stageInstanceId);
+    await this.templateSync.ensureRadiologyStudiesFromMedia(stageInstanceId);
+
     const stage = await this.prisma.stageInstance.findUnique({
       where: { id: stageInstanceId },
       include: {
@@ -39,7 +46,14 @@ export class StageCompletenessApiService {
           },
           orderBy: { mediaRequirement: { sortOrder: 'asc' } },
         },
-        mediaAssets: { include: { assignments: true } },
+        mediaAssets: {
+          where: { archivedAt: null },
+          include: {
+            assignments: {
+              include: { requirementInstance: { include: { mediaRequirement: true } } },
+            },
+          },
+        },
         radiologyStudies: true,
         implants: { include: { radiologyAttachments: true } },
         surgeonConfirmation: true,
@@ -123,6 +137,7 @@ export class StageCompletenessApiService {
         assignments: asset.assignments.map((a) => ({
           requirementCode:
             a.requirementCode ??
+            a.requirementInstance?.mediaRequirement?.code ??
             (a.requirementInstanceId
               ? requirementCodeByInstanceId.get(a.requirementInstanceId) ?? null
               : null),
@@ -138,6 +153,9 @@ export class StageCompletenessApiService {
         id: implant.id,
         implantLabel: implant.implantLabel,
         implantNumber: implant.implantNumber,
+        jawScope: implant.jawScope,
+        toothPositionFdi: implant.toothPositionFdi,
+        implantTypeId: implant.implantTypeId,
         actualMethodCode: implant.actualMethodCode,
         status: implant.status,
         attachments: implant.radiologyAttachments.map((a) => ({

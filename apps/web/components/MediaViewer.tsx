@@ -35,10 +35,7 @@ function mediaTypeLabel(mediaType?: string) {
     case 'STL':
       return 'STL';
     case 'RADIOLOGY_IMAGE':
-    case 'RADIOLOGY_STUDY':
       return 'Рентген';
-    case 'DICOM_SERIES':
-      return 'DICOM';
     default:
       return mediaType ?? 'Файлы';
   }
