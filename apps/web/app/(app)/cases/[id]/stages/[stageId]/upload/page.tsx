@@ -16,6 +16,11 @@ import {
   type MediaAssetDto,
   type RequirementInstanceDto,
 } from '@/lib/api';
+import {
+  prepareScanUpload,
+  SCAN_MAX_BYTES,
+  suggestScanSlotCode,
+} from '@/lib/scan-bundle';
 
 type MediaTab = 'photo' | 'video' | 'docs' | 'stl' | 'radiology' | 'checklist' | 'history';
 
@@ -57,22 +62,22 @@ const ACCEPT_BY_TYPE: Record<string, string> = {
   PHOTO: 'image/jpeg,image/png,image/tiff,image/webp,.jpg,.jpeg,.png,.tif,.tiff',
   VIDEO: 'video/mp4,video/quicktime,.mp4,.mov',
   DOCUMENT: 'application/pdf,.pdf',
-  STL: '.stl,model/stl,application/sla,application/vnd.ms-pki.stl,model/x.stl-ascii,model/x.stl-binary',
+  STL: [
+    '.obj',
+    '.mtl',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.stl',
+    'model/obj',
+    'model/stl',
+    'application/sla',
+    'image/jpeg',
+    'image/png',
+  ].join(','),
   RADIOLOGY: 'image/*,application/pdf',
   RADIOLOGY_IMAGE: 'image/*,application/pdf',
 };
-
-const STL_MAX_BYTES = 50 * 1024 * 1024;
-
-/** Подсказка слота по имени файла экспорта exocad / сканера */
-function suggestStlSlotCode(fileName: string): string | null {
-  const n = fileName.toLowerCase().replace(/\s+/g, '');
-  if (n.includes('situ')) return null;
-  if (n.includes('upperjaw') || /(^|[^a-z])upper([^a-z]|$)/.test(n)) return 'IMP_SCAN_UPPER';
-  if (n.includes('lowerjaw') || /(^|[^a-z])lower([^a-z]|$)/.test(n)) return 'IMP_SCAN_LOWER';
-  if (n.includes('totaljaw') || n.includes('bite') || n.includes('occlusion')) return 'IMP_SCAN_BITE';
-  return null;
-}
 
 const STL_SLOT_LABEL: Record<string, string> = {
   IMP_SCAN_UPPER: 'верхняя челюсть',
@@ -89,7 +94,7 @@ function mediaTypeLabel(mediaType: string) {
     case 'DOCUMENT':
       return 'Документ';
     case 'STL':
-      return 'STL';
+      return '3D-скан';
     case 'RADIOLOGY':
     case 'RADIOLOGY_IMAGE':
       return 'Рентген';
@@ -102,6 +107,8 @@ function resolveMimeType(file: File): string {
   if (file.type) return file.type;
   const lower = file.name.toLowerCase();
   if (lower.endsWith('.stl')) return 'model/stl';
+  if (lower.endsWith('.obj')) return 'model/obj';
+  if (lower.endsWith('.obj.zip') || lower.endsWith('.zip')) return 'application/zip';
   if (lower.endsWith('.pdf')) return 'application/pdf';
   return 'application/octet-stream';
 }
@@ -229,33 +236,56 @@ export default function StageUploadPage() {
     return protocolAssetsSorted.filter((a) => tabMediaTypes.includes(a.mediaType));
   }, [protocolAssetsSorted, tabMediaTypes, activeTab]);
 
-  function setFile(requirementInstanceId: string, file: File | null, mediaType?: string, code?: string) {
-    if (file && mediaType === 'STL') {
-      if (file.size > STL_MAX_BYTES) {
-        setError(`STL «${file.name}» слишком большой (макс. 50 МБ)`);
-        setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: null }));
-        return;
+  async function setScanFiles(
+    requirementInstanceId: string,
+    fileList: FileList | null,
+    code?: string,
+  ) {
+    if (!fileList?.length) {
+      setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: null }));
+      return;
+    }
+    setError(null);
+    setSlotStatus((prev) => ({
+      ...prev,
+      [requirementInstanceId]: 'Подготовка цветного набора…',
+    }));
+    try {
+      const prepared = await prepareScanUpload(Array.from(fileList));
+      if (prepared.file.size > SCAN_MAX_BYTES) {
+        throw new Error(`Файл слишком большой (макс. ${SCAN_MAX_BYTES / (1024 * 1024)} МБ)`);
       }
-      if (!/\.stl$/i.test(file.name) && !file.type.includes('stl') && file.type !== 'application/sla') {
-        setError('Для слота STL нужен файл .stl');
-        setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: null }));
-        return;
-      }
-      const suggested = suggestStlSlotCode(file.name);
+      const suggested = suggestScanSlotCode(prepared.file.name);
       if (suggested && code && suggested !== code) {
         setSlotStatus((prev) => ({
           ...prev,
-          [requirementInstanceId]: `По имени файла это похоже на «${STL_SLOT_LABEL[suggested] ?? suggested}» — проверьте слот`,
+          [requirementInstanceId]: `По имени это похоже на «${STL_SLOT_LABEL[suggested] ?? suggested}» — проверьте слот · ${prepared.label}`,
         }));
       } else if (suggested && code && suggested === code) {
         setSlotStatus((prev) => ({
           ...prev,
-          [requirementInstanceId]: `Имя файла соответствует слоту «${STL_SLOT_LABEL[code] ?? code}»`,
+          [requirementInstanceId]: `Слот «${STL_SLOT_LABEL[code] ?? code}» · ${prepared.label}`,
+        }));
+      } else {
+        setSlotStatus((prev) => ({
+          ...prev,
+          [requirementInstanceId]: prepared.label,
         }));
       }
+      setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: prepared.file }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось подготовить скан');
+      setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: null }));
+      setSlotStatus((prev) => ({ ...prev, [requirementInstanceId]: '' }));
     }
+  }
+
+  function setFile(requirementInstanceId: string, file: File | null, mediaType?: string) {
     setError(null);
     setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: file }));
+    if (file && mediaType !== 'STL') {
+      setSlotStatus((prev) => ({ ...prev, [requirementInstanceId]: '' }));
+    }
   }
 
   function openViewerForRequirement(ri: RequirementInstanceDto) {
@@ -464,7 +494,7 @@ export default function StageUploadPage() {
                       : t === 'docs'
                         ? 'Документы'
                         : t === 'stl'
-                          ? 'STL'
+                          ? '3D-скан'
                           : 'Рентгенология',
                 )
                 .join(', ')}
@@ -554,7 +584,13 @@ export default function StageUploadPage() {
 
               <div>
                 <label className="label-field" htmlFor={`file-${ri.id}`}>
-                  {currentAssets.length ? 'Заменить файл' : 'Файл для положения'}
+                  {currentAssets.length
+                    ? req.mediaType === 'STL'
+                      ? 'Заменить скан'
+                      : 'Заменить файл'
+                    : req.mediaType === 'STL'
+                      ? 'Файлы скана для положения'
+                      : 'Файл для положения'}
                 </label>
                 <input
                   id={`file-${ri.id}`}
@@ -562,17 +598,30 @@ export default function StageUploadPage() {
                   accept={ACCEPT_BY_TYPE[req.mediaType] ?? '*/*'}
                   className="input-field"
                   disabled={busy}
-                  onChange={(e) =>
-                    setFile(ri.id, e.target.files?.[0] ?? null, req.mediaType, req.code)
-                  }
+                  multiple={req.mediaType === 'STL'}
+                  onChange={(e) => {
+                    if (req.mediaType === 'STL') {
+                      void setScanFiles(ri.id, e.target.files, req.code);
+                    } else {
+                      setFile(ri.id, e.target.files?.[0] ?? null, req.mediaType);
+                    }
+                  }}
                 />
                 {req.mediaType === 'STL' ? (
                   <p className="mt-1 text-[11px] text-gray-500">
-                    Exocad: UpperJaw → верх, LowerJaw → низ, TotalJaw → прикус. Только .stl, до 50 МБ.
+                    Exocad (цвет): выберите сразу{' '}
+                    <span className="font-medium text-graphite">.obj + .mtl + .jpg</span> одной
+                    челюсти (UpperJaw / LowerJaw / TotalJaw). Можно только .stl — без цвета. Situ не
+                    использовать. До {SCAN_MAX_BYTES / (1024 * 1024)} МБ.
                   </p>
                 ) : null}
                 {selected ? (
-                  <div className="mt-1 text-xs text-gray-600">Выбрано: {selected.name}</div>
+                  <div className="mt-1 text-xs text-gray-600">
+                    К загрузке: {selected.name}
+                    {selected.name.toLowerCase().endsWith('.obj.zip')
+                      ? ` (${(selected.size / (1024 * 1024)).toFixed(1)} МБ)`
+                      : ''}
+                  </div>
                 ) : null}
                 {slotStatus[ri.id] ? (
                   <div className="mt-1 text-xs text-status-success">{slotStatus[ri.id]}</div>

@@ -79,6 +79,22 @@ class CompleteFileBody {
 function isStlFile(mimeType: string, filename?: string | null) {
   const name = (filename ?? '').toLowerCase();
   const mime = (mimeType ?? '').toLowerCase();
+  // Цветной скан exocad: .obj / .obj.zip (+ mtl/jpg внутри архива)
+  if (
+    name.endsWith('.obj') ||
+    name.endsWith('.obj.zip') ||
+    name.endsWith('.objbundle.zip') ||
+    (name.endsWith('.zip') && name.includes('.obj')) ||
+    mime === 'model/obj'
+  ) {
+    return true;
+  }
+  if (
+    (mime === 'application/zip' || mime === 'application/x-zip-compressed') &&
+    name.includes('obj')
+  ) {
+    return true;
+  }
   return (
     name.endsWith('.stl') ||
     mime === 'model/stl' ||

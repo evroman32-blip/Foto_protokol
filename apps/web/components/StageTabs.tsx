@@ -12,7 +12,7 @@ const BASE_TABS = [
   { key: 'photo', label: 'Фото', mode: 'upload' as const },
   { key: 'video', label: 'Видео', mode: 'upload' as const },
   { key: 'docs', label: 'Документы', mode: 'upload' as const },
-  { key: 'stl', label: 'STL', mode: 'upload' as const },
+  { key: 'stl', label: '3D-скан', mode: 'upload' as const },
   { key: 'radiology', label: 'Рентгенология', mode: 'upload' as const },
   { key: 'report', label: 'Отчёт', mode: 'report' as const },
   { key: 'checklist', label: 'Чек-лист', mode: 'main' as const },

@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 
+import { ObjViewer } from '@/components/ObjViewer';
 import { StlViewer } from '@/components/StlViewer';
+import { isTexturedScanAsset } from '@/lib/scan-bundle';
 import { mediaApi, type MediaAssetDto, type MediaViewUrlDto } from '@/lib/api';
 
 interface MediaViewerProps {
@@ -27,6 +29,7 @@ function isPdf(mime?: string, mediaType?: string) {
 
 function isStl(mime?: string, mediaType?: string, fileName?: string) {
   const lower = (fileName ?? '').toLowerCase();
+  if (isTexturedScanAsset(fileName, mime)) return false;
   return Boolean(
     mediaType === 'STL' ||
       mime === 'model/stl' ||
@@ -34,6 +37,10 @@ function isStl(mime?: string, mediaType?: string, fileName?: string) {
       mime?.includes('stl') ||
       lower.endsWith('.stl'),
   );
+}
+
+function isObjScan(mime?: string, _mediaType?: string, fileName?: string) {
+  return isTexturedScanAsset(fileName, mime);
 }
 
 function mediaTypeLabel(mediaType?: string) {
@@ -45,7 +52,7 @@ function mediaTypeLabel(mediaType?: string) {
     case 'DOCUMENT':
       return 'Документ';
     case 'STL':
-      return 'STL';
+      return '3D-скан';
     case 'RADIOLOGY_IMAGE':
       return 'Рентген';
     default:
@@ -115,7 +122,10 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
     >
       <div
         className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded bg-white shadow-xl ${
-          isStl(view?.mimeType, asset.mediaType, asset.originalFileName) ? 'max-w-6xl' : 'max-w-5xl'
+          isStl(view?.mimeType, asset.mediaType, asset.originalFileName) ||
+          isObjScan(view?.mimeType, asset.mediaType, asset.originalFileName)
+            ? 'max-w-6xl'
+            : 'max-w-5xl'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -137,7 +147,9 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
           {loading ? <div className="text-sm text-gray-500">Загрузка…</div> : null}
           {error ? <div className="alert-error">{error}</div> : null}
           {!loading && !error && view ? (
-            isStl(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName) ? (
+            isObjScan(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName) ? (
+              <ObjViewer mediaId={asset.id} fallbackUrl={view.url} className="w-full" />
+            ) : isStl(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName) ? (
               <StlViewer mediaId={asset.id} fallbackUrl={view.url} className="w-full" />
             ) : isImage(view.mimeType, view.mediaType) ? (
               // eslint-disable-next-line @next/next/no-img-element
