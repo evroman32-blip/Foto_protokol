@@ -56,7 +56,6 @@ export default function SurgicalRadiologyPage() {
     setError(null);
     try {
       const hasOptg = studies.some((s) => s.studyType === 'OPTG');
-      const allMethods = implants.every((i) => i.actualMethodCode);
       const allSlices = implants.every((i) =>
         attachmentsOf(i).some((a) => a.surgeonConfirmed),
       );
@@ -64,8 +63,7 @@ export default function SurgicalRadiologyPage() {
         (i) =>
           (i.jawScope === 'UPPER' || i.jawScope === 'LOWER') &&
           i.toothPositionFdi &&
-          i.implantTypeId &&
-          i.actualMethodCode,
+          attachmentsOf(i).some((a) => a.surgeonConfirmed),
       );
 
       await radiologyApi.confirmSurgeon(stageId, {
@@ -74,7 +72,7 @@ export default function SurgicalRadiologyPage() {
         optgUploaded: hasOptg,
         cbctUploaded: true,
         allImplantsHaveCtSlices: allSlices,
-        allImplantsHaveMethodSelected: allMethods,
+        allImplantsHaveMethodSelected: true, // вид/метод опциональны на этом этапе
       });
       await load();
     } catch (err) {
@@ -95,8 +93,6 @@ export default function SurgicalRadiologyPage() {
     return (
       (i.jawScope === 'UPPER' || i.jawScope === 'LOWER') &&
       i.toothPositionFdi &&
-      i.implantTypeId &&
-      i.actualMethodCode &&
       slices.some((a) => a.surgeonConfirmed)
     );
   }).length;
@@ -147,12 +143,13 @@ export default function SurgicalRadiologyPage() {
               {implants.map((i) => {
                 const slices = attachmentsOf(i);
                 const ok =
-                  Boolean(i.toothPositionFdi && i.implantTypeId && i.actualMethodCode) &&
-                  slices.some((a) => a.surgeonConfirmed);
+                  Boolean(i.toothPositionFdi) && slices.some((a) => a.surgeonConfirmed);
                 return (
                   <li key={i.id} className="px-3 py-2">
                     <div className="font-medium">
-                      #{i.implantNumber} · {i.implantLabel || `Зуб ${i.toothPositionFdi ?? '—'}`}
+                      {i.toothPositionFdi
+                        ? `Зуб ${i.toothPositionFdi}`
+                        : i.implantLabel || `#${i.implantNumber}`}
                       <span className={`ml-2 text-xs ${ok ? 'text-status-success' : 'text-status-warning'}`}>
                         {ok ? 'готово' : 'неполно'}
                       </span>
@@ -163,9 +160,6 @@ export default function SurgicalRadiologyPage() {
                         : i.jawScope === 'LOWER'
                           ? 'Нижняя'
                           : i.jawScope}
-                      {i.toothPositionFdi ? ` · зуб ${i.toothPositionFdi}` : ''}
-                      {i.implantType ? ` · ${i.implantType.nameRu}` : ''}
-                      {i.actualMethodCode ? ` · ${i.actualMethodCode}` : ''}
                       {slices.some((a) => a.surgeonConfirmed) ? ' · JPG есть' : ' · JPG нет'}
                     </div>
                   </li>

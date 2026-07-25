@@ -128,16 +128,16 @@ function preopRequirements(): ReqDef[] {
 
 function postopRequirements(): ReqDef[] {
   return [
-    { code: 'POSTOP_OPTG', name: 'Послеоперационное ОПТГ', mediaType: MediaType.RADIOLOGY_IMAGE, sortOrder: 1 },
+    { code: 'G', name: 'Предоперационное ОПТГ', mediaType: MediaType.RADIOLOGY_IMAGE, sortOrder: 1 },
+    { code: 'POSTOP_OPTG', name: 'Послеоперационное ОПТГ', mediaType: MediaType.RADIOLOGY_IMAGE, sortOrder: 2 },
     {
       code: 'POSTOP_IMPLANT_SLICE_CARDS',
       name: 'Карточки срезов имплантатов (JPG)',
       mediaType: MediaType.STRUCTURED_DATA,
-      sortOrder: 2,
+      sortOrder: 3,
       specialRule: 'everyImplantHasJpgSliceCard',
     },
-    { code: 'POSTOP_IMPLANT_METHOD_REGISTRY', name: 'Реестр методов установки', mediaType: MediaType.STRUCTURED_DATA, sortOrder: 3, specialRule: 'everyImplantHasActualMethod' },
-    { code: 'POSTOP_SURGEON_CONFIRMATION', name: 'Подтверждение хирурга', mediaType: MediaType.STRUCTURED_CONFIRMATION, sortOrder: 4 },
+    { code: 'POSTOP_SURGEON_CONFIRMATION', name: 'Подтверждение хирурга', mediaType: MediaType.STRUCTURED_CONFIRMATION, sortOrder: 5 },
   ];
 }
 

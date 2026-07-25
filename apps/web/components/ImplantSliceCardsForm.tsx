@@ -2,69 +2,111 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import {
-  radiologyApi,
-  uploadApi,
-  type ImplantMethodDto,
-  type ImplantTypeDto,
-  type SurgicalImplantDto,
-} from '@/lib/api';
+import { radiologyApi, uploadApi, type SurgicalImplantDto } from '@/lib/api';
 
-const UPPER_TEETH = ['11', '12', '13', '14', '15', '16', '17', '18', '21', '22', '23', '24', '25', '26', '27', '28'];
-const LOWER_TEETH = ['31', '32', '33', '34', '35', '36', '37', '38', '41', '42', '43', '44', '45', '46', '47', '48'];
+type JawScope = 'UPPER' | 'LOWER';
 
-type DraftCard = {
-  jawScope: 'UPPER' | 'LOWER';
-  toothPositionFdi: string;
-  implantTypeId: string;
-  actualMethodCode: string;
-  file: File | null;
+type SectorDef = {
+  id: number;
+  title: string;
+  rows: string[][];
 };
 
-const emptyDraft = (): DraftCard => ({
-  jawScope: 'UPPER',
-  toothPositionFdi: '',
-  implantTypeId: '',
-  actualMethodCode: '',
-  file: null,
-});
+/** Порядок зубов Strategic Implant®: от 18 к 48 по секторам */
+export const FDI_TOOTH_ORDER = [
+  '18', '17', '16', '15', '14', '13', '12', '11',
+  '28', '27', '26', '25', '24', '23', '22', '21',
+  '38', '37', '36', '35', '34', '33', '32', '31',
+  '48', '47', '46', '45', '44', '43', '42', '41',
+] as const;
+
+export function fdiSortRank(tooth: string | null | undefined): number {
+  if (!tooth) return 999;
+  const idx = FDI_TOOTH_ORDER.indexOf(tooth as (typeof FDI_TOOTH_ORDER)[number]);
+  return idx === -1 ? 999 : idx;
+}
+
+const UPPER_SECTORS: SectorDef[] = [
+  {
+    id: 1,
+    title: 'Сектор 1',
+    rows: [
+      ['18', '17', '16', '15'],
+      ['14', '13', '12', '11'],
+    ],
+  },
+  {
+    id: 2,
+    title: 'Сектор 2',
+    rows: [
+      ['28', '27', '26', '25'],
+      ['24', '23', '22', '21'],
+    ],
+  },
+];
+
+const LOWER_SECTORS: SectorDef[] = [
+  {
+    id: 3,
+    title: 'Сектор 3',
+    rows: [
+      ['38', '37', '36', '35'],
+      ['34', '33', '32', '31'],
+    ],
+  },
+  {
+    id: 4,
+    title: 'Сектор 4',
+    rows: [
+      ['48', '47', '46', '45'],
+      ['44', '43', '42', '41'],
+    ],
+  },
+];
 
 function attachmentsOf(implant: SurgicalImplantDto) {
   return implant.radiologyAttachments ?? implant.attachments ?? [];
 }
 
-export function ImplantSliceCardsForm({ stageId }: { stageId: string }) {
+function hasConfirmedSlice(implant: SurgicalImplantDto) {
+  return attachmentsOf(implant).some((a) => a.surgeonConfirmed);
+}
+
+export function ImplantSliceCardsForm({
+  stageId,
+  onChanged,
+}: {
+  stageId: string;
+  onChanged?: () => void;
+}) {
   const [implants, setImplants] = useState<SurgicalImplantDto[]>([]);
-  const [methods, setMethods] = useState<ImplantMethodDto[]>([]);
-  const [types, setTypes] = useState<ImplantTypeDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState<DraftCard>(emptyDraft);
+  const [busyTooth, setBusyTooth] = useState<string | null>(null);
+  const [jawScope, setJawScope] = useState<JawScope>('UPPER');
 
-  const teeth = draft.jawScope === 'UPPER' ? UPPER_TEETH : LOWER_TEETH;
-  const filteredMethods = useMemo(
-    () => methods.filter((m) => m.jawScope === 'BOTH' || m.jawScope === draft.jawScope),
-    [methods, draft.jawScope],
-  );
+  const sectors = jawScope === 'UPPER' ? UPPER_SECTORS : LOWER_SECTORS;
 
-  async function load() {
-    setLoading(true);
+  const byTooth = useMemo(() => {
+    const map = new Map<string, SurgicalImplantDto>();
+    for (const implant of implants) {
+      if (implant.toothPositionFdi) map.set(implant.toothPositionFdi, implant);
+    }
+    return map;
+  }, [implants]);
+
+  const filledOnJaw = implants.filter((i) => i.jawScope === jawScope).length;
+
+  async function load(opts?: { silent?: boolean }) {
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
-      const [implantsData, methodsData, typesData] = await Promise.all([
-        radiologyApi.implants(stageId),
-        radiologyApi.implantMethods(),
-        radiologyApi.implantTypes(),
-      ]);
-      setImplants(implantsData);
-      setMethods(methodsData);
-      setTypes(typesData);
+      setImplants(await radiologyApi.implants(stageId));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки карточек');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }
 
@@ -93,58 +135,58 @@ export function ImplantSliceCardsForm({ stageId }: { stageId: string }) {
     return mediaId;
   }
 
-  async function handleAddCard() {
-    setBusy(true);
+  async function handleFileForTooth(tooth: string, file: File | null) {
+    if (!file) return;
+    setBusyTooth(tooth);
     setError(null);
     setMessage(null);
     try {
-      if (!draft.toothPositionFdi) throw new Error('Укажите номер зуба');
-      if (!draft.implantTypeId) throw new Error('Выберите вид имплантата');
-      if (!draft.actualMethodCode) throw new Error('Выберите метод установки');
-      if (!draft.file) throw new Error('Прикрепите JPG-срез имплантата');
-      if (!/\.jpe?g$/i.test(draft.file.name) && draft.file.type !== 'image/jpeg') {
+      if (!/\.jpe?g$/i.test(file.name) && file.type !== 'image/jpeg') {
         throw new Error('Срез должен быть в формате JPG');
       }
 
-      const nextNumber =
-        implants.reduce((max, i) => Math.max(max, Number(i.implantNumber) || 0), 0) + 1;
+      let implant = byTooth.get(tooth);
+      if (!implant) {
+        const implantNumber = Number(tooth);
+        implant = await radiologyApi.createImplant(stageId, {
+          implantNumber: Number.isFinite(implantNumber) ? implantNumber : fdiSortRank(tooth) + 1,
+          jawScope,
+          toothPositionFdi: tooth,
+          implantLabel: `Зуб ${tooth}`,
+        });
+      }
 
-      const created = await radiologyApi.createImplant(stageId, {
-        implantNumber: nextNumber,
-        jawScope: draft.jawScope,
-        toothPositionFdi: draft.toothPositionFdi,
-        implantTypeId: draft.implantTypeId,
-        actualMethodCode: draft.actualMethodCode,
-        implantLabel: `Зуб ${draft.toothPositionFdi}`,
-      });
-
-      const mediaAssetId = await uploadJpg(draft.file);
-      await radiologyApi.attachSlice(created.id, {
+      const mediaAssetId = await uploadJpg(file);
+      await radiologyApi.attachSlice(implant.id, {
         mediaAssetId,
         attachmentType: 'CT_CROSS_SECTION',
         surgeonConfirmed: true,
       });
 
-      setDraft(emptyDraft());
-      setMessage('Карточка имплантата сохранена');
-      await load();
+      setMessage(`JPG для зуба ${tooth} сохранён`);
+      await load({ silent: true });
+      onChanged?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось сохранить карточку');
+      setError(err instanceof Error ? err.message : 'Не удалось сохранить срез');
     } finally {
-      setBusy(false);
+      setBusyTooth(null);
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!window.confirm('Удалить карточку имплантата?')) return;
-    setBusy(true);
+  async function handleClearTooth(implant: SurgicalImplantDto) {
+    const tooth = implant.toothPositionFdi ?? '';
+    if (!window.confirm(`Удалить срез зуба ${tooth || implant.implantNumber}?`)) return;
+    setBusyTooth(tooth || String(implant.id));
+    setError(null);
     try {
-      await radiologyApi.deleteImplant(id);
-      await load();
+      await radiologyApi.deleteImplant(implant.id);
+      setMessage(tooth ? `Окно зуба ${tooth} очищено` : 'Карточка удалена');
+      await load({ silent: true });
+      onChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось удалить');
     } finally {
-      setBusy(false);
+      setBusyTooth(null);
     }
   }
 
@@ -154,149 +196,102 @@ export function ImplantSliceCardsForm({ stageId }: { stageId: string }) {
 
   return (
     <section className="card mb-6">
-      <h2 className="mb-1 font-semibold text-graphite">Карточки срезов имплантатов</h2>
+      <h2 className="mb-1 font-semibold text-graphite">
+        3. Карточки срезов имплантатов
+      </h2>
       <p className="mb-4 text-sm text-gray-600">
-        На каждый имплантат: челюсть, номер зуба, вид, метод и JPG-скриншот среза с экрана КТ.
+        Выберите челюсть и загрузите JPG-срезы в окна зубов. Пустые окна допустимы. Вид и метод
+        установки на этом этапе необязательны.
       </p>
 
       {error ? <div className="alert-error mb-3">{error}</div> : null}
       {message ? <div className="mb-3 text-sm text-status-success">{message}</div> : null}
 
-      <div className="mb-4 grid gap-3 rounded border border-border bg-surface-muted/40 p-3 sm:grid-cols-2">
-        <div>
-          <label className="label-field">Челюсть</label>
-          <select
-            className="input-field"
-            value={draft.jawScope}
-            onChange={(e) =>
-              setDraft((d) => ({
-                ...d,
-                jawScope: e.target.value as 'UPPER' | 'LOWER',
-                toothPositionFdi: '',
-              }))
-            }
-          >
-            <option value="UPPER">Верхняя</option>
-            <option value="LOWER">Нижняя</option>
-          </select>
-        </div>
-        <div>
-          <label className="label-field">Номер зуба (FDI)</label>
-          <select
-            className="input-field"
-            value={draft.toothPositionFdi}
-            onChange={(e) => setDraft((d) => ({ ...d, toothPositionFdi: e.target.value }))}
-          >
-            <option value="">Выберите…</option>
-            {teeth.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label-field">Вид имплантата</label>
-          <select
-            className="input-field"
-            value={draft.implantTypeId}
-            onChange={(e) => setDraft((d) => ({ ...d, implantTypeId: e.target.value }))}
-          >
-            <option value="">Выберите…</option>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.nameRu}
-                {t.brand ? ` · ${t.brand}` : ''}
-              </option>
-            ))}
-          </select>
-          {!types.length ? (
-            <p className="mt-1 text-xs text-status-warning">
-              Справочник пуст — заполните в Админ → Виды имплантатов
-            </p>
-          ) : null}
-        </div>
-        <div>
-          <label className="label-field">Метод установки</label>
-          <select
-            className="input-field"
-            value={draft.actualMethodCode}
-            onChange={(e) => setDraft((d) => ({ ...d, actualMethodCode: e.target.value }))}
-          >
-            <option value="">Выберите…</option>
-                {filteredMethods.map((m) => (
-                  <option key={m.id} value={m.code}>
-                    {m.code} · {m.nameRu}
-                  </option>
-                ))}
-          </select>
-        </div>
-        <div className="sm:col-span-2">
-          <label className="label-field">JPG-срез имплантата (скриншот с КТ)</label>
-          <input
-            type="file"
-            accept=".jpg,.jpeg,image/jpeg"
-            className="input-field"
-            onChange={(e) => setDraft((d) => ({ ...d, file: e.target.files?.[0] ?? null }))}
-          />
-          {draft.file ? <p className="mt-1 text-xs text-gray-500">{draft.file.name}</p> : null}
-        </div>
-        <div className="sm:col-span-2">
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy}
-            onClick={() => void handleAddCard()}
-          >
-            {busy ? 'Сохранение…' : 'Добавить карточку имплантата'}
-          </button>
-        </div>
+      <div className="mb-4 max-w-xs">
+        <label className="label-field">Челюсть</label>
+        <select
+          className="input-field"
+          value={jawScope}
+          onChange={(e) => {
+            setJawScope(e.target.value as JawScope);
+            setMessage(null);
+          }}
+        >
+          <option value="UPPER">Верхняя (ВЧ)</option>
+          <option value="LOWER">Нижняя (НЧ)</option>
+        </select>
       </div>
 
-      {implants.length ? (
-        <ul className="divide-y divide-border rounded border border-border">
-          {implants.map((i) => {
-            const slices = attachmentsOf(i);
-            return (
-              <li
-                key={i.id}
-                className="flex flex-wrap items-start justify-between gap-3 px-3 py-3 text-sm"
-              >
-                <div>
-                  <div className="font-medium">
-                    #{i.implantNumber} · {i.implantLabel || `Зуб ${i.toothPositionFdi ?? '—'}`}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    {i.jawScope === 'UPPER'
-                      ? 'Верхняя'
-                      : i.jawScope === 'LOWER'
-                        ? 'Нижняя'
-                        : i.jawScope}
-                    {i.toothPositionFdi ? ` · зуб ${i.toothPositionFdi}` : ''}
-                    {i.implantType
-                      ? ` · ${i.implantType.nameRu}`
-                      : i.implantTypeId
-                        ? ' · вид выбран'
-                        : ' · вид не выбран'}
-                    {i.actualMethodCode ? ` · ${i.actualMethodCode}` : ' · метод не выбран'}
-                    {slices.some((a) => a.surgeonConfirmed) ? ' · JPG загружен' : ' · JPG отсутствует'}
-                  </div>
+      <p className="mb-4 text-xs text-gray-500">
+        На выбранной челюсти заполнено окон: {filledOnJaw}. Остальные позиции можно оставить
+        пустыми.
+      </p>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {sectors.map((sector) => (
+          <div key={sector.id} className="rounded border border-border bg-surface-muted/30 p-3">
+            <h3 className="mb-3 text-sm font-semibold text-graphite">{sector.title}</h3>
+            <div className="grid gap-3">
+              {sector.rows.map((row) => (
+                <div key={row.join('-')} className="grid grid-cols-4 gap-2">
+                  {row.map((tooth) => {
+                    const implant = byTooth.get(tooth);
+                    const busy = busyTooth === tooth;
+                    const filled = Boolean(implant && hasConfirmedSlice(implant));
+                    return (
+                      <div
+                        key={tooth}
+                        className={`rounded border p-2 ${
+                          filled
+                            ? 'border-status-success/40 bg-white'
+                            : 'border-dashed border-border bg-white/70'
+                        }`}
+                      >
+                        <div className="mb-1 text-center font-mono text-sm font-semibold">
+                          {tooth}
+                        </div>
+                        <label className="block cursor-pointer">
+                          <span className="sr-only">JPG для зуба {tooth}</span>
+                          <input
+                            type="file"
+                            accept=".jpg,.jpeg,image/jpeg"
+                            className="block w-full text-[10px] file:mr-1 file:rounded file:border-0 file:bg-surface-muted file:px-1.5 file:py-1 file:text-[10px]"
+                            disabled={busy || busyTooth !== null}
+                            onChange={(e) => {
+                              const selected = e.target.files?.[0] ?? null;
+                              e.target.value = '';
+                              void handleFileForTooth(tooth, selected);
+                            }}
+                          />
+                        </label>
+                        {busy ? (
+                          <p className="mt-1 text-center text-[10px] text-gray-500">Сохранение…</p>
+                        ) : filled ? (
+                          <p className="mt-1 text-center text-[10px] text-status-success">
+                            Зуб {tooth}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-center text-[10px] text-gray-400">пусто</p>
+                        )}
+                        {implant ? (
+                          <button
+                            type="button"
+                            className="btn-secondary mt-2 w-full !px-1 !py-0.5 text-[10px]"
+                            disabled={busyTooth !== null}
+                            onClick={() => void handleClearTooth(implant)}
+                          >
+                            Очистить
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
-                <button
-                  type="button"
-                  className="btn-secondary !px-2 !py-1 text-xs"
-                  disabled={busy}
-                  onClick={() => void handleDelete(i.id)}
-                >
-                  Удалить
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="text-sm text-gray-500">Карточек пока нет — добавьте хотя бы одну.</p>
-      )}
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

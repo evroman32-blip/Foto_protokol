@@ -115,8 +115,8 @@ export default function StageUploadPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ assets: MediaAssetDto[]; index: number } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const stage = await stagesApi.get(stageId);
@@ -145,7 +145,7 @@ export default function StageUploadPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить требования этапа');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [stageId, tabFromUrl]);
 
@@ -179,11 +179,37 @@ export default function StageUploadPage() {
     [filesByReq],
   );
 
+  const protocolAssetsSorted = useMemo(() => {
+    const fdiOrder = [
+      '18', '17', '16', '15', '14', '13', '12', '11',
+      '28', '27', '26', '25', '24', '23', '22', '21',
+      '38', '37', '36', '35', '34', '33', '32', '31',
+      '48', '47', '46', '45', '44', '43', '42', '41',
+    ];
+    const toothRank = (a: MediaAssetDto) => {
+      const tooth =
+        a.toothPositionFdi ??
+        (a.displayName?.match(/\b(\d{2})\b/)?.[1] ??
+          a.originalFileName?.match(/\b(\d{2})\b/)?.[1] ??
+          null);
+      if (!tooth) return 999;
+      const idx = fdiOrder.indexOf(tooth);
+      return idx === -1 ? 999 : idx;
+    };
+    return [...assets].sort((a, b) => {
+      const so = (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+      if (so !== 0) return so;
+      return toothRank(a) - toothRank(b);
+    });
+  }, [assets]);
+
   const typeAssetsSorted = useMemo(() => {
-    if (!tabMediaTypes) return [];
-    const list = assets.filter((a) => tabMediaTypes.includes(a.mediaType));
-    return [...list].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
-  }, [assets, tabMediaTypes]);
+    if (!tabMediaTypes) return protocolAssetsSorted;
+    // На вкладке рентгена показываем всю ленту протокола (ОПТГ + срезы),
+    // даже если у срезов mediaType ещё PHOTO.
+    if (activeTab === 'radiology') return protocolAssetsSorted;
+    return protocolAssetsSorted.filter((a) => tabMediaTypes.includes(a.mediaType));
+  }, [protocolAssetsSorted, tabMediaTypes, activeTab]);
 
   function setFile(requirementInstanceId: string, file: File | null) {
     setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: file }));
@@ -193,15 +219,11 @@ export default function StageUploadPage() {
     const code = ri.mediaRequirement.code;
     const current = assetsForRequirement(assets, ri.id, code);
     if (!current.length) return;
-    const mediaType = ri.mediaRequirement.mediaType;
-    const sameType = [...assets]
-      .filter((a) => a.mediaType === mediaType)
-      .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
     const index = Math.max(
       0,
-      sameType.findIndex((a) => a.id === current[0].id),
+      protocolAssetsSorted.findIndex((a) => a.id === current[0].id),
     );
-    setViewer({ assets: sameType, index });
+    setViewer({ assets: protocolAssetsSorted, index });
   }
 
   async function handleDeleteAsset(asset: MediaAssetDto, needed: number) {
@@ -365,12 +387,9 @@ export default function StageUploadPage() {
       ) : null}
 
       {activeTab === 'radiology' && stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
-        <div className="mt-4">
-          <div className="card mb-4 text-sm text-gray-600">
-            Здесь загружаются ОПТГ и карточки срезов имплантатов. Сводка и подтверждение хирурга — во
-            вкладке «Отчёт».
-          </div>
-          <ImplantSliceCardsForm stageId={stageId} />
+        <div className="card mt-4 mb-2 text-sm text-gray-600">
+          Порядок: 1) предоперационное ОПТГ, 2) послеоперационное ОПТГ, 3) карточки срезов
+          имплантатов. Сводка и подтверждение хирурга — во вкладке «Отчёт».
         </div>
       ) : null}
 
@@ -513,6 +532,12 @@ export default function StageUploadPage() {
           );
         })}
       </div>
+
+      {activeTab === 'radiology' && stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
+        <div className="mt-4">
+          <ImplantSliceCardsForm stageId={stageId} onChanged={() => void load({ silent: true })} />
+        </div>
+      ) : null}
 
       {canUploadOnTab && visibleRequirements.length > 0 ? (
         <div className="card mt-4 max-w-xl space-y-3">

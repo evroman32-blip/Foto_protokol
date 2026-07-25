@@ -41,10 +41,9 @@ function mediaTypeLabel(mediaType?: string) {
   }
 }
 
-function assetTitle(asset: MediaAssetDto) {
-  const order = asset.sortOrder;
+function assetBaseName(asset: MediaAssetDto) {
   const name = asset.displayName ?? asset.positionName ?? asset.originalFileName ?? 'Файл';
-  return order != null ? `${order}. ${name}` : name;
+  return name.replace(/^\d+\.\s*/, '');
 }
 
 export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaViewerProps) {
@@ -58,7 +57,7 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
   }, [initialIndex, assets]);
 
   const asset = assets[index];
-  const title = asset ? assetTitle(asset) : 'Файл';
+  const title = asset ? `${index + 1}. ${assetBaseName(asset)}` : 'Файл';
   const typeLabel = setLabel ?? mediaTypeLabel(asset?.mediaType);
 
   useEffect(() => {

@@ -3,6 +3,8 @@ import { ApiTags } from '@nestjs/swagger';
 import { createHash } from 'crypto';
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import {
+  AssignmentSource,
+  AssignmentStatus,
   ImplantSide,
   JawScope,
   SURGEON_RADIOLOGY_CONFIRMATION_TEXT,
@@ -234,7 +236,14 @@ export class ImplantsController {
     @CurrentUser() user: AuthUser,
   ) {
     const confirmed = dto.surgeonConfirmed !== false;
-    return this.prisma.implantRadiologyAttachment.create({
+    const implant = await this.prisma.surgicalImplantRecord.findUniqueOrThrow({
+      where: { id },
+      select: { stageInstanceId: true, toothPositionFdi: true, implantLabel: true },
+    });
+    const tooth = implant.toothPositionFdi?.trim() || null;
+    const displayName = tooth ? `Зуб ${tooth}` : implant.implantLabel || 'Срез имплантата';
+
+    const attachment = await this.prisma.implantRadiologyAttachment.create({
       data: {
         surgicalImplantRecordId: id,
         mediaAssetId: dto.mediaAssetId,
@@ -246,6 +255,47 @@ export class ImplantsController {
       },
       include: { mediaAsset: true },
     });
+
+    await this.prisma.mediaAsset.update({
+      where: { id: dto.mediaAssetId },
+      data: {
+        originalFileName: displayName,
+        mediaType: 'RADIOLOGY_IMAGE',
+        ...(confirmed ? { status: 'DOCTOR_CONFIRMED' as const } : {}),
+      },
+    });
+
+    const sliceRi = await this.prisma.requirementInstance.findFirst({
+      where: {
+        stageInstanceId: implant.stageInstanceId,
+        mediaRequirement: { code: 'POSTOP_IMPLANT_SLICE_CARDS', isActive: true },
+      },
+      select: { id: true },
+    });
+
+    const existingAsg = await this.prisma.mediaAssignment.findFirst({
+      where: {
+        mediaAssetId: dto.mediaAssetId,
+        OR: [
+          { requirementCode: 'POSTOP_IMPLANT_SLICE_CARDS' },
+          ...(sliceRi ? [{ requirementInstanceId: sliceRi.id }] : []),
+        ],
+      },
+    });
+    if (!existingAsg) {
+      await this.prisma.mediaAssignment.create({
+        data: {
+          mediaAssetId: dto.mediaAssetId,
+          requirementInstanceId: sliceRi?.id ?? null,
+          requirementCode: 'POSTOP_IMPLANT_SLICE_CARDS',
+          source: AssignmentSource.DOCTOR,
+          status: AssignmentStatus.CONFIRMED,
+          confirmedAt: new Date(),
+        },
+      });
+    }
+
+    return attachment;
   }
 
   @Get('stages/:stageId/surgeon-confirmation')

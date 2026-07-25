@@ -423,7 +423,7 @@ describe('StageCompletenessService', () => {
     expect(r.blockingReasons).toContain('Отсутствует послеоперационное ОПТГ.');
   });
 
-  it('blocks implant without method', () => {
+  it('does not block implant without method or type (optional at this stage)', () => {
     const r = svc.evaluate(
       baseInput({
         stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
@@ -433,19 +433,27 @@ describe('StageCompletenessService', () => {
         implants: [
           {
             id: 'i1',
-            implantLabel: 'IMP-03',
-            implantNumber: 3,
+            implantLabel: 'Зуб 16',
+            implantNumber: 16,
+            jawScope: 'UPPER',
+            toothPositionFdi: '16',
             actualMethodCode: null,
-            status: 'DRAFT',
-            attachments: [],
+            implantTypeId: null,
+            status: 'DOCUMENTED',
+            attachments: [{ attachmentType: 'CT_CROSS_SECTION', surgeonConfirmed: true }],
           },
         ],
-        surgeonConfirmation: null,
+        surgeonConfirmation: {
+          allImplantsDocumented: true,
+          optgUploaded: true,
+          cbctUploaded: true,
+          allImplantsHaveCtSlices: true,
+          allImplantsHaveMethodSelected: false,
+          hasImplantsForReview: false,
+        },
       }),
     );
-    expect(r.blockingReasons).toContain(
-      'Имплантат IMP-03 не привязан к методу установки.',
-    );
+    expect(r.blockingReasons.join(' ')).not.toMatch(/метод|вид имплантата/i);
   });
 
   it('does not require CBCT or DICOM for surgical stage', () => {

@@ -13,7 +13,7 @@ import { ErrorState, LoadingState } from '@/components/States';
 import { mediaApi, stagesApi, type MediaAssetDto, type StageDetailDto } from '@/lib/api';
 import { STAGE_STATUS_LABELS } from '@/lib/constants';
 
-function assetTitle(asset: MediaAssetDto) {
+function assetBaseName(asset: MediaAssetDto) {
   let name = asset.displayName ?? asset.positionName ?? null;
   if (!name) {
     name =
@@ -27,7 +27,13 @@ function assetTitle(asset: MediaAssetDto) {
       asset.originalFilename ??
       'Файл без названия';
   }
-  return asset.sortOrder != null ? `${asset.sortOrder}. ${name}` : name;
+  // Убрать префикс «3. » если он уже попал в название
+  return name.replace(/^\d+\.\s*/, '');
+}
+
+/** Сквозная нумерация в списке этапа: 1, 2, 3, 4… */
+function assetTitle(asset: MediaAssetDto, sequenceNo: number) {
+  return `${sequenceNo}. ${assetBaseName(asset)}`;
 }
 
 function mediaTypeLabel(mediaType: string) {
@@ -84,17 +90,35 @@ export default function StageDetailPage() {
   }, [stageId]);
 
   const assets = useMemo(() => {
+    const fdiOrder = [
+      '18', '17', '16', '15', '14', '13', '12', '11',
+      '28', '27', '26', '25', '24', '23', '22', '21',
+      '38', '37', '36', '35', '34', '33', '32', '31',
+      '48', '47', '46', '45', '44', '43', '42', '41',
+    ];
+    const toothRank = (a: MediaAssetDto) => {
+      const tooth =
+        a.toothPositionFdi ??
+        (a.displayName?.match(/\b(\d{2})\b/)?.[1] ?? null);
+      if (!tooth) return 999;
+      const idx = fdiOrder.indexOf(tooth);
+      return idx === -1 ? 999 : idx;
+    };
     const list = stage?.mediaAssets ?? [];
-    return [...list].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+    return [...list].sort((a, b) => {
+      const so = (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+      if (so !== 0) return so;
+      return toothRank(a) - toothRank(b);
+    });
   }, [stage?.mediaAssets]);
 
   function openViewer(asset: MediaAssetDto) {
-    const sameType = assets.filter((a) => a.mediaType === asset.mediaType);
-    const index = Math.max(0, sameType.findIndex((a) => a.id === asset.id));
+    // Единая лента по порядку протокола: 1 → 2 → 3 (зубы 18…48) → …
+    const index = Math.max(0, assets.findIndex((a) => a.id === asset.id));
     setViewer({
-      assets: sameType,
+      assets,
       index,
-      label: `${mediaTypeLabel(asset.mediaType)} этапа`,
+      label: 'Медиаматериалы этапа',
     });
   }
 
@@ -120,19 +144,21 @@ export default function StageDetailPage() {
   }
 
   async function handleDelete(asset: MediaAssetDto) {
+    const seq = Math.max(1, assets.findIndex((a) => a.id === asset.id) + 1);
+    const title = assetTitle(asset, seq);
     if (!canDeleteAsset(asset)) {
       setError(
-        `Нельзя удалить «${assetTitle(asset)}»: это обязательный минимум для положения. Загрузите замену или оставьте файл.`,
+        `Нельзя удалить «${title}»: это обязательный минимум для положения. Загрузите замену или оставьте файл.`,
       );
       return;
     }
-    if (!window.confirm(`Удалить файл «${assetTitle(asset)}»?`)) return;
+    if (!window.confirm(`Удалить файл «${title}»?`)) return;
     setBusyMedia(true);
     setError(null);
     setMessage(null);
     try {
       await mediaApi.archive(asset.id);
-      setMessage(`Файл удалён: ${assetTitle(asset)}`);
+      setMessage(`Файл удалён: ${title}`);
       if (viewer) setViewer(null);
       await load();
     } catch (err) {
@@ -279,8 +305,8 @@ export default function StageDetailPage() {
         </p>
         {assets.length ? (
           <ul className="space-y-1 text-sm">
-            {assets.map((asset) => {
-              const title = assetTitle(asset);
+            {assets.map((asset, idx) => {
+              const title = assetTitle(asset, idx + 1);
               const deletable = canDeleteAsset(asset);
               return (
                 <li key={asset.id} className="flex items-center justify-between gap-3 border-b border-border py-2">

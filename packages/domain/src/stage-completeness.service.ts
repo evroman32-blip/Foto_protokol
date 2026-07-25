@@ -342,7 +342,7 @@ export class StageCompletenessService {
       pushUnique(result.missingImplantRecords, 'REGISTRY');
       pushUnique(
         result.blockingReasons,
-        'Не создан реестр установленных имплантатов.',
+        'Не загружен ни один JPG-срез имплантата (пустые окна зубов допустимы).',
       );
     }
 
@@ -356,17 +356,7 @@ export class StageCompletenessService {
         pushUnique(result.missingImplantRecords, `${label}:TOOTH`);
         pushUnique(result.blockingReasons, `Имплантат ${label}: не указан номер зуба.`);
       }
-      if (!implant.implantTypeId) {
-        pushUnique(result.missingImplantRecords, `${label}:TYPE`);
-        pushUnique(result.blockingReasons, `Имплантат ${label}: не выбран вид имплантата.`);
-      }
-      if (!implant.actualMethodCode) {
-        pushUnique(result.missingImplantRecords, label);
-        pushUnique(
-          result.blockingReasons,
-          `Имплантат ${label} не привязан к методу установки.`,
-        );
-      }
+      // Вид и метод установки на этом этапе опциональны — не блокируют.
 
       const hasJpgSlice = implant.attachments.some((a) => a.surgeonConfirmed);
       if (!hasJpgSlice) {
@@ -395,7 +385,6 @@ export class StageCompletenessService {
       if (
         !conf.allImplantsDocumented ||
         !conf.optgUploaded ||
-        !conf.allImplantsHaveMethodSelected ||
         !conf.allImplantsHaveCtSlices
       ) {
         pushUnique(

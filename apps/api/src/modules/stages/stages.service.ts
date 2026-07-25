@@ -44,6 +44,11 @@ export class StagesService {
                 requirementInstance: { include: { mediaRequirement: true } },
               },
             },
+            implantAttachments: {
+              include: {
+                surgicalImplantRecord: { select: { toothPositionFdi: true, implantLabel: true } },
+              },
+            },
           },
           where: { archivedAt: null },
           orderBy: { uploadedAt: 'desc' },
@@ -51,25 +56,58 @@ export class StagesService {
       },
     });
     if (!stage) throw new NotFoundException('Этап не найден');
+
+    const fdiOrder = [
+      '18', '17', '16', '15', '14', '13', '12', '11',
+      '28', '27', '26', '25', '24', '23', '22', '21',
+      '38', '37', '36', '35', '34', '33', '32', '31',
+      '48', '47', '46', '45', '44', '43', '42', '41',
+    ];
+    const fdiRank = (tooth?: string | null) => {
+      if (!tooth) return 999;
+      const idx = fdiOrder.indexOf(tooth);
+      return idx === -1 ? 999 : idx;
+    };
+
+    const enriched = stage.mediaAssets.map((asset) => {
+      const primary =
+        asset.assignments.find((a) => a.status !== 'REJECTED') ?? asset.assignments[0];
+      const mr = primary?.requirementInstance?.mediaRequirement;
+      const code = primary?.requirementCode ?? mr?.code ?? null;
+      const tooth =
+        asset.implantAttachments[0]?.surgicalImplantRecord?.toothPositionFdi ?? null;
+      const isSliceCard = code === 'POSTOP_IMPLANT_SLICE_CARDS' || Boolean(tooth);
+      const toothLabel = tooth
+        ? `Зуб ${tooth}`
+        : asset.implantAttachments[0]?.surgicalImplantRecord?.implantLabel ?? null;
+      const positionName = isSliceCard
+        ? toothLabel ?? mr?.name ?? 'Карточки срезов имплантатов'
+        : (mr?.name ?? primary?.requirementCode ?? null);
+      return {
+        ...asset,
+        fileSizeBytes:
+          typeof asset.fileSizeBytes === 'bigint'
+            ? Number(asset.fileSizeBytes)
+            : asset.fileSizeBytes,
+        displayName: positionName ?? asset.originalFileName,
+        positionName,
+        requirementCode: code,
+        sortOrder: mr?.sortOrder ?? (isSliceCard ? 3 : null),
+        mediaRequirementId: mr?.id ?? null,
+        toothPositionFdi: tooth,
+        _toothRank: fdiRank(tooth),
+      };
+    });
+
+    enriched.sort((a, b) => {
+      const so = (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+      if (so !== 0) return so;
+      return (a._toothRank ?? 999) - (b._toothRank ?? 999);
+    });
+
     return {
       ...stage,
-      mediaAssets: stage.mediaAssets.map((asset) => {
-        const primary = asset.assignments.find((a) => a.status !== 'REJECTED') ?? asset.assignments[0];
-        const mr = primary?.requirementInstance?.mediaRequirement;
-        const positionName = mr?.name ?? primary?.requirementCode ?? null;
-        return {
-          ...asset,
-          fileSizeBytes:
-            typeof asset.fileSizeBytes === 'bigint'
-              ? Number(asset.fileSizeBytes)
-              : asset.fileSizeBytes,
-          displayName: positionName ?? asset.originalFileName,
-          positionName,
-          requirementCode: primary?.requirementCode ?? mr?.code ?? null,
-          sortOrder: mr?.sortOrder ?? null,
-          mediaRequirementId: mr?.id ?? null,
-        };
-      }),
+      mediaAssets: enriched.map(({ _toothRank, ...asset }) => asset),
     };
   }
 

@@ -476,6 +476,7 @@ export interface RequirementInstanceDto {
 export interface MediaAssetDto {
   id: string;
   mediaType: string;
+  toothPositionFdi?: string | null;
   status: string;
   originalFilename?: string;
   originalFileName?: string;
