@@ -85,6 +85,8 @@ export class StagesService {
         : (mr?.name ?? primary?.requirementCode ?? null);
       return {
         ...asset,
+        // Тип из шаблона положения важнее эвристики по MIME при загрузке
+        mediaType: (mr?.mediaType ?? asset.mediaType) as typeof asset.mediaType,
         fileSizeBytes:
           typeof asset.fileSizeBytes === 'bigint'
             ? Number(asset.fileSizeBytes)

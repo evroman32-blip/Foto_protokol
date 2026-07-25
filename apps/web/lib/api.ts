@@ -595,6 +595,23 @@ export const uploadApi = {
 export const mediaApi = {
   viewUrl: (mediaAssetId: string) =>
     request<MediaViewUrlDto>(`/api/v1/media/${mediaAssetId}/view-url`),
+  /** Бинарное содержимое файла (STL и др.) через API — без CORS к S3 */
+  fetchContent: async (mediaAssetId: string): Promise<ArrayBuffer> => {
+    const authToken = typeof window !== 'undefined' ? getStoredToken() : null;
+    const res = await fetch(`${API_BASE}/api/v1/media/${mediaAssetId}/content`, {
+      headers: {
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => undefined);
+      const raw = (errBody as { message?: string | string[] })?.message;
+      const message = Array.isArray(raw) ? raw.join('; ') : raw ?? `HTTP ${res.status}`;
+      throw new ApiError(message, res.status, errBody);
+    }
+    return res.arrayBuffer();
+  },
   archive: (mediaAssetId: string) =>
     request<{ id: string }>(`/api/v1/media/${mediaAssetId}/archive`, { method: 'POST' }),
   cleanupDuplicates: (stageInstanceId: string) =>

@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  StreamableFile,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
@@ -97,6 +98,28 @@ export class MediaController {
     };
   }
 
+  /** Поток файла через API (для 3D STL без CORS к MinIO/S3) */
+  @Get(':id/content')
+  @AuditAction('media.content')
+  async content(@Param('id') id: string) {
+    const asset = await this.prisma.mediaAsset.findUnique({
+      where: { id },
+    });
+    if (!asset || asset.archivedAt) {
+      throw new NotFoundException('Файл не найден');
+    }
+    const { body, contentType } = await this.storage.getObjectBuffer(asset.storedObjectKey);
+    const mime =
+      contentType ||
+      asset.mimeType ||
+      (asset.mediaType === 'STL' ? 'model/stl' : 'application/octet-stream');
+    return new StreamableFile(body, {
+      type: mime,
+      disposition: `inline; filename="${asset.originalFileName.replace(/"/g, '')}"`,
+      length: body.length,
+    });
+  }
+
   @Get(':id')
   get(@Param('id') id: string) {
     return this.prisma.mediaAsset.findUniqueOrThrow({
@@ -119,11 +142,40 @@ export class MediaController {
       include: { stageInstance: true },
     });
 
+    // Положение шаблона этапа — источник истины для кода и mediaType
+    let requirementCode = dto.requirementCode ?? null;
+    let templateMediaType: string | null = null;
+    if (dto.requirementInstanceId) {
+      const ri = await this.prisma.requirementInstance.findUnique({
+        where: { id: dto.requirementInstanceId },
+        include: { mediaRequirement: { select: { code: true, mediaType: true } } },
+      });
+      if (ri) {
+        requirementCode = requirementCode ?? ri.mediaRequirement.code;
+        templateMediaType = ri.mediaRequirement.mediaType;
+      }
+    } else if (requirementCode) {
+      const mr = await this.prisma.mediaRequirement.findFirst({
+        where: {
+          code: requirementCode,
+          isActive: true,
+          stageTemplateId: (
+            await this.prisma.stageInstance.findUniqueOrThrow({
+              where: { id: asset.stageInstanceId },
+              select: { stageTemplateId: true },
+            })
+          ).stageTemplateId,
+        },
+        select: { mediaType: true },
+      });
+      templateMediaType = mr?.mediaType ?? null;
+    }
+
     const assignment = await this.prisma.mediaAssignment.create({
       data: {
         mediaAssetId: id,
         requirementInstanceId: dto.requirementInstanceId ?? null,
-        requirementCode: dto.requirementCode ?? null,
+        requirementCode,
         source: dto.source,
         status:
           dto.source === AssignmentSource.AI
@@ -133,16 +185,16 @@ export class MediaController {
       },
     });
 
-    if (dto.source === AssignmentSource.DOCTOR) {
-      await this.prisma.mediaAsset.update({
-        where: { id },
-        data: { status: 'DOCTOR_CONFIRMED' },
-      });
-    }
+    await this.prisma.mediaAsset.update({
+      where: { id },
+      data: {
+        ...(dto.source === AssignmentSource.DOCTOR ? { status: 'DOCTOR_CONFIRMED' as const } : {}),
+        ...(templateMediaType ? { mediaType: templateMediaType as never } : {}),
+      },
+    });
 
     // Связать загрузку ОПТГ с RadiologyStudy (КТ/КЛКТ исключены)
-    const code = dto.requirementCode ?? null;
-    if (code === 'POSTOP_OPTG') {
+    if (requirementCode === 'POSTOP_OPTG' || requirementCode === 'G') {
       const studyType = 'OPTG';
       const existing = await this.prisma.radiologyStudy.findFirst({
         where: {
@@ -161,7 +213,7 @@ export class MediaController {
             uploadedBy: asset.uploadedBy,
           },
         });
-      } else if (!existing.mainMediaAssetId) {
+      } else if (!existing.mainMediaAssetId || requirementCode === 'POSTOP_OPTG') {
         await this.prisma.radiologyStudy.update({
           where: { id: existing.id },
           data: { mainMediaAssetId: asset.id, status: 'READY' },

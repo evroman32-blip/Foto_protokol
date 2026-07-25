@@ -51,6 +51,21 @@ export class S3StorageService {
     return getSignedUrl(this.client, command, { expiresIn });
   }
 
+  async getObjectBuffer(objectKey: string): Promise<{ body: Buffer; contentType?: string }> {
+    const result = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+      }),
+    );
+    const bytes = await result.Body?.transformToByteArray();
+    if (!bytes) throw new Error('Пустой объект в хранилище');
+    return {
+      body: Buffer.from(bytes),
+      contentType: result.ContentType,
+    };
+  }
+
   async putObject(objectKey: string, body: Buffer, contentType: string) {
     await this.client.send(
       new PutObjectCommand({

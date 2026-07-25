@@ -56,10 +56,28 @@ function pickDefaultTab(requirements: RequirementInstanceDto[]): MediaTab {
 const ACCEPT_BY_TYPE: Record<string, string> = {
   PHOTO: 'image/jpeg,image/png,image/tiff,image/webp,.jpg,.jpeg,.png,.tif,.tiff',
   VIDEO: 'video/mp4,video/quicktime,.mp4,.mov',
-  DOCUMENT: 'application/pdf,.pdf,.stl,model/stl,application/sla',
+  DOCUMENT: 'application/pdf,.pdf',
   STL: '.stl,model/stl,application/sla,application/vnd.ms-pki.stl,model/x.stl-ascii,model/x.stl-binary',
   RADIOLOGY: 'image/*,application/pdf',
   RADIOLOGY_IMAGE: 'image/*,application/pdf',
+};
+
+const STL_MAX_BYTES = 50 * 1024 * 1024;
+
+/** Подсказка слота по имени файла экспорта exocad / сканера */
+function suggestStlSlotCode(fileName: string): string | null {
+  const n = fileName.toLowerCase().replace(/\s+/g, '');
+  if (n.includes('situ')) return null;
+  if (n.includes('upperjaw') || /(^|[^a-z])upper([^a-z]|$)/.test(n)) return 'IMP_SCAN_UPPER';
+  if (n.includes('lowerjaw') || /(^|[^a-z])lower([^a-z]|$)/.test(n)) return 'IMP_SCAN_LOWER';
+  if (n.includes('totaljaw') || n.includes('bite') || n.includes('occlusion')) return 'IMP_SCAN_BITE';
+  return null;
+}
+
+const STL_SLOT_LABEL: Record<string, string> = {
+  IMP_SCAN_UPPER: 'верхняя челюсть',
+  IMP_SCAN_LOWER: 'нижняя челюсть',
+  IMP_SCAN_BITE: 'прикус',
 };
 
 function mediaTypeLabel(mediaType: string) {
@@ -211,7 +229,32 @@ export default function StageUploadPage() {
     return protocolAssetsSorted.filter((a) => tabMediaTypes.includes(a.mediaType));
   }, [protocolAssetsSorted, tabMediaTypes, activeTab]);
 
-  function setFile(requirementInstanceId: string, file: File | null) {
+  function setFile(requirementInstanceId: string, file: File | null, mediaType?: string, code?: string) {
+    if (file && mediaType === 'STL') {
+      if (file.size > STL_MAX_BYTES) {
+        setError(`STL «${file.name}» слишком большой (макс. 50 МБ)`);
+        setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: null }));
+        return;
+      }
+      if (!/\.stl$/i.test(file.name) && !file.type.includes('stl') && file.type !== 'application/sla') {
+        setError('Для слота STL нужен файл .stl');
+        setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: null }));
+        return;
+      }
+      const suggested = suggestStlSlotCode(file.name);
+      if (suggested && code && suggested !== code) {
+        setSlotStatus((prev) => ({
+          ...prev,
+          [requirementInstanceId]: `По имени файла это похоже на «${STL_SLOT_LABEL[suggested] ?? suggested}» — проверьте слот`,
+        }));
+      } else if (suggested && code && suggested === code) {
+        setSlotStatus((prev) => ({
+          ...prev,
+          [requirementInstanceId]: `Имя файла соответствует слоту «${STL_SLOT_LABEL[code] ?? code}»`,
+        }));
+      }
+    }
+    setError(null);
     setFilesByReq((prev) => ({ ...prev, [requirementInstanceId]: file }));
   }
 
@@ -519,8 +562,15 @@ export default function StageUploadPage() {
                   accept={ACCEPT_BY_TYPE[req.mediaType] ?? '*/*'}
                   className="input-field"
                   disabled={busy}
-                  onChange={(e) => setFile(ri.id, e.target.files?.[0] ?? null)}
+                  onChange={(e) =>
+                    setFile(ri.id, e.target.files?.[0] ?? null, req.mediaType, req.code)
+                  }
                 />
+                {req.mediaType === 'STL' ? (
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    Exocad: UpperJaw → верх, LowerJaw → низ, TotalJaw → прикус. Только .stl, до 50 МБ.
+                  </p>
+                ) : null}
                 {selected ? (
                   <div className="mt-1 text-xs text-gray-600">Выбрано: {selected.name}</div>
                 ) : null}

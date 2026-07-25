@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { StlViewer } from '@/components/StlViewer';
 import { mediaApi, type MediaAssetDto, type MediaViewUrlDto } from '@/lib/api';
 
 interface MediaViewerProps {
@@ -22,6 +23,17 @@ function isVideo(mime?: string, mediaType?: string) {
 
 function isPdf(mime?: string, mediaType?: string) {
   return Boolean(mime === 'application/pdf' || mediaType === 'DOCUMENT');
+}
+
+function isStl(mime?: string, mediaType?: string, fileName?: string) {
+  const lower = (fileName ?? '').toLowerCase();
+  return Boolean(
+    mediaType === 'STL' ||
+      mime === 'model/stl' ||
+      mime === 'application/sla' ||
+      mime?.includes('stl') ||
+      lower.endsWith('.stl'),
+  );
 }
 
 function mediaTypeLabel(mediaType?: string) {
@@ -102,7 +114,9 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
       onClick={onClose}
     >
       <div
-        className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded bg-white shadow-xl"
+        className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded bg-white shadow-xl ${
+          isStl(view?.mimeType, asset.mediaType, asset.originalFileName) ? 'max-w-6xl' : 'max-w-5xl'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
@@ -123,7 +137,9 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
           {loading ? <div className="text-sm text-gray-500">Загрузка…</div> : null}
           {error ? <div className="alert-error">{error}</div> : null}
           {!loading && !error && view ? (
-            isImage(view.mimeType, view.mediaType) ? (
+            isStl(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName) ? (
+              <StlViewer mediaId={asset.id} fallbackUrl={view.url} className="w-full" />
+            ) : isImage(view.mimeType, view.mediaType) ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={view.url} alt={title} className="max-h-[70vh] max-w-full object-contain" />
             ) : isVideo(view.mimeType, view.mediaType) ? (

@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@mandarin/contracts'],
+  transpilePackages: ['@mandarin/contracts', 'three'],
   reactStrictMode: true,
 };
 
