@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 
 import { mediaApi } from '@/lib/api';
+import { createSafeWebGLRenderer } from '@/lib/webgl-renderer';
 import { isZipBuffer, unzipStore } from '@/lib/zip-store';
 
 type ObjViewerProps = {
@@ -31,7 +31,7 @@ function preloadMaterials(
   materials: MTLLoader.MaterialCreator,
   manager: THREE.LoadingManager,
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     let settled = false;
     let loadStarted = false;
     const done = () => {
@@ -43,18 +43,41 @@ function preloadMaterials(
       loadStarted = true;
     };
     manager.onLoad = done;
-    manager.onError = (url) => {
-      console.warn('Texture load warning:', url);
-      // Не блокируем просмотр при битой текстуре
-      done();
-    };
+    manager.onError = () => done();
     materials.preload();
-    // Нет map_Kd — onLoad не придёт; закрываем после двух кадров.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (!loadStarted) done();
       });
     });
+  });
+}
+
+function toStandardMaterial(
+  src: THREE.Material,
+  renderer: THREE.WebGLRenderer,
+  fallbackColor: THREE.Color,
+): THREE.MeshStandardMaterial {
+  const phong = src as THREE.MeshPhongMaterial;
+  const map = 'map' in phong && phong.map ? phong.map : null;
+  if (map) {
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+    map.needsUpdate = true;
+  }
+  const color =
+    'color' in phong && phong.color instanceof THREE.Color
+      ? phong.color.clone()
+      : fallbackColor.clone();
+
+  return new THREE.MeshStandardMaterial({
+    name: src.name || 'scan',
+    color: map ? new THREE.Color(0xffffff) : color,
+    map,
+    roughness: 0.5,
+    metalness: 0,
+    envMapIntensity: 0,
+    side: THREE.DoubleSide,
   });
 }
 
@@ -68,94 +91,70 @@ export function ObjViewer({ mediaId, fallbackUrl, className }: ObjViewerProps) {
     if (!host || !mediaId) return;
 
     let disposed = false;
+    let frame = 0;
+    const blobUrls: string[] = [];
+    const createdMaterials: THREE.Material[] = [];
+
     setStatus('loading');
     setError(null);
 
     const width = () => host.clientWidth || 640;
     const height = () => Math.max(host.clientHeight || 480, 360);
 
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = createSafeWebGLRenderer();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'WebGL недоступен');
+      setStatus('error');
+      return;
+    }
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xe8eef5);
 
-    const camera = new THREE.PerspectiveCamera(40, width() / height(), 0.01, 10000);
+    const camera = new THREE.PerspectiveCamera(40, width() / height(), 0.1, 100000);
     camera.position.set(0, 40, 120);
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: false,
-      powerPreference: 'high-performance',
-      precision: 'highp',
-    });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(width(), height(), false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Без ACES/PMREM — меньше шансов сломать контекст во встроенном браузере
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.shadowMap.enabled = false;
     host.replaceChildren(renderer.domElement);
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     renderer.domElement.style.display = 'block';
 
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    pmrem.compileEquirectangularShader();
-    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environment = envTex;
-
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.06;
-    controls.minDistance = 5;
-    controls.zoomSpeed = 1.15;
-    controls.rotateSpeed = 0.85;
+    controls.dampingFactor = 0.08;
 
-    const hemi = new THREE.HemisphereLight(0xfff4ec, 0x9eb4c8, 0.65);
-    scene.add(hemi);
-
-    const key = new THREE.DirectionalLight(0xfff8f0, 1.25);
-    key.position.set(90, 140, 70);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.bias = -0.00015;
+    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+    const key = new THREE.DirectionalLight(0xffffff, 0.9);
+    key.position.set(60, 100, 40);
     scene.add(key);
-
-    const fill = new THREE.DirectionalLight(0xddeeff, 0.5);
-    fill.position.set(-100, 60, -40);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.35);
+    fill.position.set(-50, 40, -30);
     scene.add(fill);
 
-    const rim = new THREE.DirectionalLight(0xffffff, 0.55);
-    rim.position.set(-40, 30, 120);
-    scene.add(rim);
-
     let root: THREE.Object3D | null = null;
-    let frame = 0;
-    const blobUrls: string[] = [];
 
     function fitCameraToObject(object: THREE.Object3D) {
       const box = new THREE.Box3().setFromObject(object);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
       object.position.sub(center);
-
       const maxDim = Math.max(size.x, size.y, size.z, 1);
-      const fitDist = (maxDim * 1.05) / (2 * Math.tan((Math.PI * camera.fov) / 360));
+      const fitDist = (maxDim * 1.1) / (2 * Math.tan((Math.PI * camera.fov) / 360));
       camera.position.set(fitDist * 0.55, fitDist * 0.4, fitDist * 1.05);
-      camera.near = Math.max(fitDist / 200, 0.01);
-      camera.far = fitDist * 200;
+      camera.near = Math.max(fitDist / 500, 0.01);
+      camera.far = fitDist * 500;
       camera.updateProjectionMatrix();
-
-      key.shadow.camera.left = -maxDim;
-      key.shadow.camera.right = maxDim;
-      key.shadow.camera.top = maxDim;
-      key.shadow.camera.bottom = -maxDim;
-      key.shadow.camera.near = 0.5;
-      key.shadow.camera.far = fitDist * 8;
-      key.shadow.camera.updateProjectionMatrix();
-
       controls.target.set(0, 0, 0);
-      controls.minDistance = maxDim * 0.15;
-      controls.maxDistance = fitDist * 6;
+      controls.minDistance = maxDim * 0.1;
+      controls.maxDistance = fitDist * 8;
       controls.update();
     }
 
@@ -167,48 +166,37 @@ export function ObjViewer({ mediaId, fallbackUrl, className }: ObjViewerProps) {
     }
     animate();
 
-    function onResize() {
-      if (disposed || !host) return;
+    const ro = new ResizeObserver(() => {
+      if (disposed) return;
       const w = width();
       const h = height();
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
       renderer.setSize(w, h, false);
-    }
-    const ro = new ResizeObserver(onResize);
+    });
     ro.observe(host);
 
-    async function loadBuffer(): Promise<ArrayBuffer> {
+    void (async () => {
       try {
-        return await mediaApi.fetchContent(mediaId);
-      } catch (primaryErr) {
-        if (!fallbackUrl) throw primaryErr;
-        const res = await fetch(fallbackUrl);
-        if (!res.ok) throw primaryErr;
-        return res.arrayBuffer();
-      }
-    }
-
-    function filesFromBuffer(buffer: ArrayBuffer): Map<string, Uint8Array> {
-      if (isZipBuffer(buffer)) return unzipStore(buffer);
-      // Сырой .obj одним файлом
-      const map = new Map<string, Uint8Array>();
-      map.set('model.obj', new Uint8Array(buffer));
-      return map;
-    }
-
-    void loadBuffer()
-      .then(async (buffer) => {
+        let buffer: ArrayBuffer;
+        try {
+          buffer = await mediaApi.fetchContent(mediaId);
+        } catch (primaryErr) {
+          if (!fallbackUrl) throw primaryErr;
+          const res = await fetch(fallbackUrl);
+          if (!res.ok) throw primaryErr;
+          buffer = await res.arrayBuffer();
+        }
         if (disposed) return;
-        const files = filesFromBuffer(buffer);
+
+        const files = isZipBuffer(buffer)
+          ? unzipStore(buffer)
+          : new Map<string, Uint8Array>([['model.obj', new Uint8Array(buffer)]]);
+
         const objEntry = findEntry(files, (n) => n.endsWith('.obj'));
         if (!objEntry) throw new Error('В архиве нет файла .obj');
 
-        const [objName, objData] = objEntry;
-        const objText = new TextDecoder().decode(objData);
-
-        // Индекс файлов по basename для MTL map_Kd
+        const objText = new TextDecoder().decode(objEntry[1]);
         const byBase = new Map<string, Uint8Array>();
         for (const [name, data] of files) {
           byBase.set(basename(name).toLowerCase(), data);
@@ -216,18 +204,17 @@ export function ObjViewer({ mediaId, fallbackUrl, className }: ObjViewerProps) {
 
         const manager = new THREE.LoadingManager();
         manager.setURLModifier((url) => {
-          const key = basename(url).toLowerCase();
-          const data = byBase.get(key) ?? byBase.get(decodeURIComponent(key));
+          const keyName = basename(url).toLowerCase();
+          const data = byBase.get(keyName) ?? byBase.get(decodeURIComponent(keyName));
           if (!data) return url;
-          const lower = key;
-          const mime = lower.endsWith('.png')
+          const mime = keyName.endsWith('.png')
             ? 'image/png'
-            : lower.endsWith('.webp')
+            : keyName.endsWith('.webp')
               ? 'image/webp'
-              : lower.endsWith('.bmp')
+              : keyName.endsWith('.bmp')
                 ? 'image/bmp'
                 : 'image/jpeg';
-          const blobUrl = URL.createObjectURL(new Blob([data], { type: mime }));
+          const blobUrl = URL.createObjectURL(new Blob([data.slice()], { type: mime }));
           blobUrls.push(blobUrl);
           return blobUrl;
         });
@@ -240,91 +227,78 @@ export function ObjViewer({ mediaId, fallbackUrl, className }: ObjViewerProps) {
           materials = mtlLoader.parse(new TextDecoder().decode(mtlEntry[1]), '');
           await preloadMaterials(materials, manager);
         }
-
         if (disposed) return;
 
         const objLoader = new OBJLoader(manager);
         if (materials) objLoader.setMaterials(materials);
         const group = objLoader.parse(objText);
 
-        const fallbackMat = new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color(0xf3d5c4),
-          roughness: 0.35,
+        const fallbackColor = new THREE.Color(0xf3d5c4);
+        const fallbackMat = new THREE.MeshStandardMaterial({
+          color: fallbackColor,
+          roughness: 0.45,
           metalness: 0,
-          clearcoat: 0.25,
-          envMapIntensity: 0.9,
           side: THREE.DoubleSide,
         });
+        createdMaterials.push(fallbackMat);
 
         group.traverse((obj) => {
           const mesh = obj as THREE.Mesh;
           if (!mesh.isMesh) return;
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          for (const mat of mats) {
-            if (!mat) continue;
-            const std = mat as THREE.MeshStandardMaterial;
-            if (std.map) {
-              std.map.colorSpace = THREE.SRGBColorSpace;
-              std.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
-            }
-            std.side = THREE.DoubleSide;
-            if ('roughness' in std && std.roughness == null) std.roughness = 0.45;
-            std.needsUpdate = true;
-          }
-          if (!mesh.material || (Array.isArray(mesh.material) && mesh.material.length === 0)) {
+          const list = Array.isArray(mesh.material)
+            ? mesh.material
+            : mesh.material
+              ? [mesh.material]
+              : [];
+          if (!list.length) {
             mesh.material = fallbackMat;
+            return;
           }
+          const converted = list.map((mat) => {
+            if (!mat) return fallbackMat;
+            if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
+              if (mat.map) {
+                mat.map.colorSpace = THREE.SRGBColorSpace;
+                mat.map.needsUpdate = true;
+              }
+              mat.side = THREE.DoubleSide;
+              mat.envMapIntensity = 0;
+              mat.needsUpdate = true;
+              return mat;
+            }
+            const std = toStandardMaterial(mat, renderer, fallbackColor);
+            createdMaterials.push(std);
+            return std;
+          });
+          mesh.material = converted.length === 1 ? converted[0] : converted;
         });
 
         root = group;
         scene.add(group);
         fitCameraToObject(group);
-
-        const box = new THREE.Box3().setFromObject(group);
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z, 1);
-        const floor = new THREE.Mesh(
-          new THREE.CircleGeometry(1, 96),
-          new THREE.MeshStandardMaterial({
-            color: 0xd5dde8,
-            roughness: 0.92,
-            metalness: 0,
-          }),
-        );
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        floor.scale.setScalar(maxDim * 1.5);
-        floor.position.y = box.min.y - maxDim * 0.015;
-        scene.add(floor);
-
-        setStatus('ready');
-      })
-      .catch((err) => {
+        if (!disposed) setStatus('ready');
+      } catch (err) {
         if (disposed) return;
         console.error(err);
-        setError(err instanceof Error ? err.message : 'Не удалось загрузить цветную 3D-модель');
+        setError(err instanceof Error ? err.message : 'Не удалось загрузить 3D-модель');
         setStatus('error');
-      });
+      }
+    })();
 
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
       ro.disconnect();
       controls.dispose();
-      envTex.dispose();
-      pmrem.dispose();
       for (const u of blobUrls) URL.revokeObjectURL(u);
-      scene.traverse((obj) => {
-        const m = obj as THREE.Mesh;
-        if (m.isMesh) {
-          m.geometry?.dispose();
-          if (Array.isArray(m.material)) m.material.forEach((mat) => mat.dispose());
-          else m.material?.dispose();
-        }
-      });
-      if (root) scene.remove(root);
+      for (const mat of createdMaterials) mat.dispose();
+      if (root) {
+        root.traverse((obj) => {
+          const m = obj as THREE.Mesh;
+          if (m.isMesh) m.geometry?.dispose();
+        });
+      }
+      // Только dispose — БЕЗ forceContextLoss (он отключал GPU до перезапуска браузера)
       renderer.dispose();
       host.replaceChildren();
     };

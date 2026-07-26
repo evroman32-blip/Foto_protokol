@@ -113,9 +113,13 @@ export class MediaController {
       contentType ||
       asset.mimeType ||
       (asset.mediaType === 'STL' ? 'model/stl' : 'application/octet-stream');
+    // RFC 5987: кириллица в filename ломает заголовок (ERR_INVALID_CHAR)
+    const rawName = (asset.originalFileName || 'file').replace(/["\r\n]/g, '');
+    const asciiName = rawName.replace(/[^\x20-\x7E]/g, '_') || 'file';
+    const encoded = encodeURIComponent(rawName);
     return new StreamableFile(body, {
       type: mime,
-      disposition: `inline; filename="${asset.originalFileName.replace(/"/g, '')}"`,
+      disposition: `inline; filename="${asciiName}"; filename*=UTF-8''${encoded}`,
       length: body.length,
     });
   }

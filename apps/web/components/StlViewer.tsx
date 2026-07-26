@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 
 import { mediaApi } from '@/lib/api';
+import { createSafeWebGLRenderer } from '@/lib/webgl-renderer';
 
 type StlViewerProps = {
   mediaId: string;
@@ -24,100 +24,66 @@ export function StlViewer({ mediaId, fallbackUrl, className }: StlViewerProps) {
     if (!host || !mediaId) return;
 
     let disposed = false;
+    let frame = 0;
+    let mesh: THREE.Mesh | null = null;
+
     setStatus('loading');
     setError(null);
 
     const width = () => host.clientWidth || 640;
     const height = () => Math.max(host.clientHeight || 480, 360);
 
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = createSafeWebGLRenderer();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'WebGL недоступен');
+      setStatus('error');
+      return;
+    }
+
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xe8eef5);
 
-    const camera = new THREE.PerspectiveCamera(40, width() / height(), 0.01, 10000);
+    const camera = new THREE.PerspectiveCamera(40, width() / height(), 0.1, 100000);
     camera.position.set(0, 40, 120);
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: false,
-      powerPreference: 'high-performance',
-      precision: 'highp',
-    });
-    // Максимальная чёткость на retina / HiDPI
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(width(), height(), false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.shadowMap.enabled = false;
     host.replaceChildren(renderer.domElement);
     renderer.domElement.style.width = '100%';
     renderer.domElement.style.height = '100%';
     renderer.domElement.style.display = 'block';
 
-    const pmrem = new THREE.PMREMGenerator(renderer);
-    pmrem.compileEquirectangularShader();
-    const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    scene.environment = envTex;
-
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.06;
-    controls.minDistance = 5;
-    controls.zoomSpeed = 1.15;
-    controls.rotateSpeed = 0.85;
+    controls.dampingFactor = 0.08;
 
-    // Многоточечное освещение — рельеф и мелкие детали сканa
-    const hemi = new THREE.HemisphereLight(0xfff4ec, 0x9eb4c8, 0.55);
-    scene.add(hemi);
-
-    const key = new THREE.DirectionalLight(0xfff8f0, 1.35);
-    key.position.set(90, 140, 70);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.bias = -0.00015;
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const key = new THREE.DirectionalLight(0xffffff, 1.0);
+    key.position.set(80, 120, 60);
     scene.add(key);
-
-    const fill = new THREE.DirectionalLight(0xddeeff, 0.55);
-    fill.position.set(-100, 60, -40);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+    fill.position.set(-70, 40, -40);
     scene.add(fill);
-
-    const rim = new THREE.DirectionalLight(0xffffff, 0.7);
-    rim.position.set(-40, 30, 120);
-    scene.add(rim);
-
-    const bounce = new THREE.DirectionalLight(0xffe8d8, 0.35);
-    bounce.position.set(20, -80, 40);
-    scene.add(bounce);
-
-    let mesh: THREE.Mesh | null = null;
-    let frame = 0;
 
     function fitCameraToObject(object: THREE.Object3D) {
       const box = new THREE.Box3().setFromObject(object);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
       object.position.sub(center);
-
       const maxDim = Math.max(size.x, size.y, size.z, 1);
-      const fitDist = (maxDim * 1.05) / (2 * Math.tan((Math.PI * camera.fov) / 360));
+      const fitDist = (maxDim * 1.1) / (2 * Math.tan((Math.PI * camera.fov) / 360));
       camera.position.set(fitDist * 0.55, fitDist * 0.4, fitDist * 1.05);
-      camera.near = Math.max(fitDist / 200, 0.01);
-      camera.far = fitDist * 200;
+      camera.near = Math.max(fitDist / 500, 0.01);
+      camera.far = fitDist * 500;
       camera.updateProjectionMatrix();
-
-      // Тень под моделью
-      key.shadow.camera.left = -maxDim;
-      key.shadow.camera.right = maxDim;
-      key.shadow.camera.top = maxDim;
-      key.shadow.camera.bottom = -maxDim;
-      key.shadow.camera.near = 0.5;
-      key.shadow.camera.far = fitDist * 8;
-      key.shadow.camera.updateProjectionMatrix();
-
       controls.target.set(0, 0, 0);
-      controls.minDistance = maxDim * 0.15;
-      controls.maxDistance = fitDist * 6;
+      controls.minDistance = maxDim * 0.1;
+      controls.maxDistance = fitDist * 8;
       controls.update();
     }
 
@@ -129,120 +95,76 @@ export function StlViewer({ mediaId, fallbackUrl, className }: StlViewerProps) {
     }
     animate();
 
-    function onResize() {
-      if (disposed || !host) return;
+    const ro = new ResizeObserver(() => {
+      if (disposed) return;
       const w = width();
       const h = height();
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
       renderer.setSize(w, h, false);
-    }
-    const ro = new ResizeObserver(onResize);
+    });
     ro.observe(host);
 
     const loader = new STLLoader();
 
-    async function loadBuffer(): Promise<ArrayBuffer> {
+    void (async () => {
       try {
-        return await mediaApi.fetchContent(mediaId);
-      } catch (primaryErr) {
-        if (!fallbackUrl) throw primaryErr;
-        const res = await fetch(fallbackUrl);
-        if (!res.ok) throw primaryErr;
-        return res.arrayBuffer();
-      }
-    }
-
-    void loadBuffer()
-      .then((buffer) => {
+        let buffer: ArrayBuffer;
+        try {
+          buffer = await mediaApi.fetchContent(mediaId);
+        } catch (primaryErr) {
+          if (!fallbackUrl) throw primaryErr;
+          const res = await fetch(fallbackUrl);
+          if (!res.ok) throw primaryErr;
+          buffer = await res.arrayBuffer();
+        }
         if (disposed) return;
-        const geometry = loader.parse(buffer);
-        // Сглаженные нормали + сохранение микрорельефа скана
-        geometry.computeVertexNormals();
-        geometry.computeBoundingBox();
-        geometry.computeBoundingSphere();
 
-        const material = new THREE.MeshPhysicalMaterial({
-          color: new THREE.Color(0xf3d5c4), // тёплый тон слизистой / гипса
-          roughness: 0.22,
-          metalness: 0.0,
-          clearcoat: 0.55,
-          clearcoatRoughness: 0.28,
-          reflectivity: 0.55,
-          envMapIntensity: 1.05,
-          sheen: 0.35,
-          sheenRoughness: 0.4,
-          sheenColor: new THREE.Color(0xffe4d6),
-          flatShading: false,
+        const geometry = loader.parse(buffer);
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(0xf3d5c4),
+          roughness: 0.35,
+          metalness: 0,
           side: THREE.DoubleSide,
         });
 
         mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
         scene.add(mesh);
         fitCameraToObject(mesh);
-
-        // Подложка после центрирования — для глубины и контраста
-        const box = new THREE.Box3().setFromObject(mesh);
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z, 1);
-        const floor = new THREE.Mesh(
-          new THREE.CircleGeometry(1, 96),
-          new THREE.MeshStandardMaterial({
-            color: 0xd5dde8,
-            roughness: 0.92,
-            metalness: 0,
-          }),
-        );
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        floor.scale.setScalar(maxDim * 1.5);
-        floor.position.y = box.min.y - maxDim * 0.015;
-        scene.add(floor);
-
-        setStatus('ready');
-      })
-      .catch((err) => {
+        if (!disposed) setStatus('ready');
+      } catch (err) {
         if (disposed) return;
         console.error(err);
         setError(err instanceof Error ? err.message : 'Не удалось загрузить STL-модель');
         setStatus('error');
-      });
+      }
+    })();
 
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);
       ro.disconnect();
       controls.dispose();
-      envTex.dispose();
-      pmrem.dispose();
       if (mesh) {
         mesh.geometry.dispose();
         if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
         else mesh.material.dispose();
-        scene.remove(mesh);
       }
-      scene.traverse((obj) => {
-        const m = obj as THREE.Mesh;
-        if (m.isMesh) {
-          m.geometry?.dispose();
-          if (Array.isArray(m.material)) m.material.forEach((mat) => mat.dispose());
-          else m.material?.dispose();
-        }
-      });
       renderer.dispose();
       host.replaceChildren();
     };
   }, [mediaId, fallbackUrl]);
 
   return (
-    <div className={`relative h-[75vh] w-full overflow-hidden rounded border border-border bg-[#e8eef5] ${className ?? ''}`}>
+    <div
+      className={`relative h-[75vh] w-full overflow-hidden rounded border border-border bg-[#e8eef5] ${className ?? ''}`}
+    >
       <div ref={hostRef} className="absolute inset-0" />
       {status === 'loading' ? (
         <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-gray-600">
-          Загрузка 3D-модели в высоком качестве…
+          Загрузка 3D-модели…
         </div>
       ) : null}
       {status === 'error' ? (

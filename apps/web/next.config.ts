@@ -2,7 +2,8 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@mandarin/contracts', 'three'],
-  reactStrictMode: true,
+  // false: Strict Mode дважды монтирует Three.js и ломает WebGL во встроенном браузере
+  reactStrictMode: false,
 };
 
 export default nextConfig;
