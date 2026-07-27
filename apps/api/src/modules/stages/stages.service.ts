@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import {
+  ImpressionCaptureMode,
   ORTHODONTIC_CONFIRMATION_TEXT,
   StageCode,
   StageInstanceStatus,
@@ -115,6 +116,37 @@ export class StagesService {
 
   async getCompleteness(stageId: string) {
     return this.completenessService.evaluate(stageId);
+  }
+
+  async setImpressionCaptureMode(
+    stageId: string,
+    user: AuthUser,
+    mode: ImpressionCaptureMode,
+  ) {
+    const stage = await this.prisma.stageInstance.findUnique({
+      where: { id: stageId },
+      include: { stageTemplate: true },
+    });
+    if (!stage) throw new NotFoundException('Этап не найден');
+    if (stage.stageTemplate.code !== StageCode.IMPRESSIONS_OR_SCANS) {
+      throw new BadRequestException(
+        'Выбор скан/оттиск доступен только на этапе оттисков и сканов',
+      );
+    }
+    if (stage.status === StageInstanceStatus.CLOSED) {
+      throw new BadRequestException('Нельзя менять способ получения на закрытом этапе');
+    }
+    this.assertRoleCanActOnStage(
+      user.role,
+      stage.stageTemplate.ownerRole as StageOwnerRole,
+      'confirm',
+    );
+
+    return this.prisma.stageInstance.update({
+      where: { id: stageId },
+      data: { impressionCaptureMode: mode },
+      include: { stageTemplate: true },
+    });
   }
 
   async confirm(stageId: string, user: AuthUser, confirmationText?: string) {

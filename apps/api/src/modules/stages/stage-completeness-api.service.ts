@@ -190,6 +190,7 @@ export class StageCompletenessApiService {
         workingHeightMm: stage.workingHeightMm ? Number(stage.workingHeightMm) : null,
         registrationConclusion: stage.registrationConclusion,
       },
+      impressionCaptureMode: stage.impressionCaptureMode ?? null,
       emergencyEventsCount: stage.emergencyEvents.length,
       misProvider: env.MIS_PROVIDER,
       stoma1cIntegrationEnabled: isStoma1cIntegrated(env),

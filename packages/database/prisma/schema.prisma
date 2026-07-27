@@ -79,6 +79,12 @@ enum StageInstanceStatus {
   BLOCKED
 }
 
+/** На этапе IMPRESSIONS_OR_SCANS: либо сканы, либо оттиски — не оба сразу */
+enum ImpressionCaptureMode {
+  SCAN
+  IMPRESSION
+}
+
 enum MediaType {
   PHOTO
   VIDEO
@@ -402,6 +408,7 @@ model StageInstance {
   optgStatus            OptgStatus?
   registrationConclusion RegistrationConclusion?
   clinicalComment       String?
+  impressionCaptureMode ImpressionCaptureMode?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
   requirementInstances  RequirementInstance[]

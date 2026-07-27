@@ -542,4 +542,122 @@ describe('StageCompletenessService', () => {
     expect(r.isComplete).toBe(false);
     expect(r.warnings.some((w) => w.includes('неотложн'))).toBe(true);
   });
+
+  const impressionsReqs = [
+    {
+      id: 's1',
+      code: 'IMP_SCAN_UPPER',
+      name: 'Скан ВЧ',
+      mediaType: 'STL',
+      required: true,
+      minCount: 1,
+    },
+    {
+      id: 's2',
+      code: 'IMP_SCAN_LOWER',
+      name: 'Скан НЧ',
+      mediaType: 'STL',
+      required: true,
+      minCount: 1,
+    },
+    {
+      id: 'p1',
+      code: 'IMP_PHOTO_IMPRESSIONS_UPPER',
+      name: 'Фото оттисков ВЧ',
+      mediaType: 'PHOTO',
+      required: true,
+      minCount: 1,
+    },
+    {
+      id: 'p2',
+      code: 'IMP_PHOTO_IMPRESSIONS_LOWER',
+      name: 'Фото оттисков НЧ',
+      mediaType: 'PHOTO',
+      required: true,
+      minCount: 1,
+    },
+  ];
+
+  it('IMPRESSIONS_OR_SCANS blocks until capture mode is chosen', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'IMPRESSIONS_OR_SCANS',
+        impressionCaptureMode: null,
+        requirements: impressionsReqs,
+        mediaAssets: [],
+      }),
+    );
+    expect(r.blockingReasons).toContain('Не выбран способ получения: скан или оттиск.');
+    expect(r.missingRequirements).not.toContain('IMP_SCAN_UPPER');
+  });
+
+  it('SCAN mode requires scans only, not impression photos', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'IMPRESSIONS_OR_SCANS',
+        impressionCaptureMode: 'SCAN',
+        requirements: impressionsReqs,
+        mediaAssets: [
+          {
+            id: 'm1',
+            status: 'DOCTOR_CONFIRMED',
+            mediaType: 'STL',
+            assignments: [
+              { requirementCode: 'IMP_SCAN_UPPER', source: 'DOCTOR', status: 'CONFIRMED' },
+            ],
+          },
+          {
+            id: 'm2',
+            status: 'DOCTOR_CONFIRMED',
+            mediaType: 'STL',
+            assignments: [
+              { requirementCode: 'IMP_SCAN_LOWER', source: 'DOCTOR', status: 'CONFIRMED' },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(r.missingRequirements).not.toContain('IMP_PHOTO_IMPRESSIONS_UPPER');
+    expect(r.missingRequirements).not.toContain('IMP_PHOTO_IMPRESSIONS_LOWER');
+    expect(r.blockingReasons.some((b) => b.includes('оттиск'))).toBe(false);
+  });
+
+  it('IMPRESSION mode requires photos only, not scans', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'IMPRESSIONS_OR_SCANS',
+        impressionCaptureMode: 'IMPRESSION',
+        requirements: impressionsReqs,
+        mediaAssets: [
+          {
+            id: 'm1',
+            status: 'DOCTOR_CONFIRMED',
+            mediaType: 'PHOTO',
+            assignments: [
+              {
+                requirementCode: 'IMP_PHOTO_IMPRESSIONS_UPPER',
+                source: 'DOCTOR',
+                status: 'CONFIRMED',
+              },
+            ],
+          },
+          {
+            id: 'm2',
+            status: 'DOCTOR_CONFIRMED',
+            mediaType: 'PHOTO',
+            assignments: [
+              {
+                requirementCode: 'IMP_PHOTO_IMPRESSIONS_LOWER',
+                source: 'DOCTOR',
+                status: 'CONFIRMED',
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(r.missingRequirements).not.toContain('IMP_SCAN_UPPER');
+    expect(r.missingRequirements).not.toContain('IMP_SCAN_LOWER');
+    expect(r.blockingReasons.some((b) => b.includes('Скан'))).toBe(false);
+  });
 });

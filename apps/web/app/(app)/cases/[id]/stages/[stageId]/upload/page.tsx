@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MediaViewer } from '@/components/MediaViewer';
 import { ImplantSliceCardsForm } from '@/components/ImplantSliceCardsForm';
+import { ImpressionCaptureModeToggle } from '@/components/ImpressionCaptureModeToggle';
 import { PageHeader } from '@/components/PageHeader';
 import { StageTabs } from '@/components/StageTabs';
 import { LoadingState } from '@/components/States';
@@ -16,6 +17,10 @@ import {
   type MediaAssetDto,
   type RequirementInstanceDto,
 } from '@/lib/api';
+import {
+  isRequirementEffectivelyRequired,
+  requirementInactiveHint,
+} from '@/lib/impression-mode';
 import {
   prepareScanUpload,
   SCAN_MAX_BYTES,
@@ -133,6 +138,10 @@ export default function StageUploadPage() {
   const [slotStatus, setSlotStatus] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<MediaTab>(tabFromUrl && TAB_MEDIA_TYPES[tabFromUrl] !== undefined ? tabFromUrl : 'photo');
   const [stageCode, setStageCode] = useState<string | undefined>();
+  const [impressionCaptureMode, setImpressionCaptureMode] = useState<
+    'SCAN' | 'IMPRESSION' | null
+  >(null);
+  const [modeBusy, setModeBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
@@ -146,6 +155,7 @@ export default function StageUploadPage() {
     try {
       const stage = await stagesApi.get(stageId);
       setStageCode(stage.stageTemplate.code);
+      setImpressionCaptureMode(stage.impressionCaptureMode ?? null);
       const reqs = [...(stage.requirementInstances ?? [])]
         .filter((r) => r.mediaRequirement.isActive !== false)
         .sort(
@@ -450,6 +460,38 @@ export default function StageUploadPage() {
 
       <StageTabs active={activeTab} stageCode={stageCode} />
 
+      {stageCode === 'IMPRESSIONS_OR_SCANS' ? (
+        <div className="mt-4">
+          <ImpressionCaptureModeToggle
+            value={impressionCaptureMode}
+            busy={modeBusy}
+            onChange={(mode) => {
+              void (async () => {
+                setModeBusy(true);
+                setError(null);
+                try {
+                  await stagesApi.setImpressionCaptureMode(stageId, mode);
+                  setImpressionCaptureMode(mode);
+                  setMessage(
+                    mode === 'SCAN'
+                      ? 'Выбран скан: обязательны STL/OBJ верхней и нижней челюсти.'
+                      : 'Выбран оттиск: обязательны фото оттисков ВЧ и НЧ.',
+                  );
+                  if (mode === 'SCAN') setActiveTab('stl');
+                  if (mode === 'IMPRESSION') setActiveTab('photo');
+                } catch (err) {
+                  setError(
+                    err instanceof Error ? err.message : 'Не удалось сохранить способ получения',
+                  );
+                } finally {
+                  setModeBusy(false);
+                }
+              })();
+            }}
+          />
+        </div>
+      ) : null}
+
       {error ? <div className="alert-error mb-4 mt-4">{error}</div> : null}
       {message ? <div className="mb-4 mt-4 text-sm text-status-success">{message}</div> : null}
 
@@ -509,13 +551,28 @@ export default function StageUploadPage() {
           const req = ri.mediaRequirement;
           const currentAssets = assetsForRequirement(assets, ri.id, req.code);
           const assigned = currentAssets.length;
-          const needed = Math.max(req.minCount || (req.required ? 1 : 0), 0);
+          const effectivelyRequired = isRequirementEffectivelyRequired({
+            stageCode,
+            impressionCaptureMode,
+            code: req.code,
+            templateRequired: req.required,
+          });
+          const inactiveHint = requirementInactiveHint({
+            stageCode,
+            impressionCaptureMode,
+            code: req.code,
+            templateRequired: req.required,
+          });
+          const needed = Math.max(req.minCount || (effectivelyRequired ? 1 : 0), 0);
           const filled = assigned >= needed && needed > 0;
           const selected = filesByReq[ri.id];
           const order = req.sortOrder;
 
           return (
-            <div key={ri.id} className="card space-y-3">
+            <div
+              key={ri.id}
+              className={`card space-y-3 ${inactiveHint ? 'opacity-60' : ''}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="font-medium text-graphite">
@@ -527,7 +584,9 @@ export default function StageUploadPage() {
                   </div>
                 </div>
                 <div className="text-right text-xs">
-                  {req.required ? (
+                  {inactiveHint ? (
+                    <span className="badge-muted">{inactiveHint}</span>
+                  ) : effectivelyRequired ? (
                     <span className="badge-muted">{filled ? 'Заполнено' : 'Обязательно'}</span>
                   ) : (
                     <span className="badge-muted">Опционально</span>

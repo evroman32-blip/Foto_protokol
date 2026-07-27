@@ -13,6 +13,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { AssignmentSource, AssignmentStatus } from '@mandarin/contracts';
+import { isMediaRequirementEffectivelyRequired } from '@mandarin/domain';
 import { PrismaService } from '../../common/services/prisma.service';
 import { QueueService, QUEUE_NAMES } from '../queue/queue.service';
 import { S3StorageService } from '../storage/s3-storage.service';
@@ -283,6 +284,7 @@ export class MediaController {
     const asset = await this.prisma.mediaAsset.findUnique({
       where: { id },
       include: {
+        stageInstance: { include: { stageTemplate: true } },
         assignments: {
           include: {
             requirementInstance: { include: { mediaRequirement: true } },
@@ -300,7 +302,13 @@ export class MediaController {
     const mr = ri?.mediaRequirement;
 
     if (ri && mr) {
-      const needed = Math.max(mr.minCount ?? 0, mr.required ? 1 : 0);
+      const effectivelyRequired = isMediaRequirementEffectivelyRequired({
+        stageCode: asset.stageInstance.stageTemplate.code,
+        impressionCaptureMode: asset.stageInstance.impressionCaptureMode,
+        code: mr.code,
+        templateRequired: mr.required,
+      });
+      const needed = Math.max(mr.minCount ?? 0, effectivelyRequired ? 1 : 0);
       if (needed > 0) {
         const siblings = await this.prisma.mediaAsset.findMany({
           where: {
@@ -368,6 +376,7 @@ export class StageMediaController {
     const stage = await this.prisma.stageInstance.findUnique({
       where: { id: stageId },
       include: {
+        stageTemplate: true,
         requirementInstances: {
           where: { mediaRequirement: { isActive: true } },
           include: { mediaRequirement: true },
@@ -389,7 +398,13 @@ export class StageMediaController {
 
     for (const ri of stage.requirementInstances) {
       const mr = ri.mediaRequirement;
-      const needed = Math.max(mr.minCount ?? 0, mr.required ? 1 : 0);
+      const effectivelyRequired = isMediaRequirementEffectivelyRequired({
+        stageCode: stage.stageTemplate.code,
+        impressionCaptureMode: stage.impressionCaptureMode,
+        code: mr.code,
+        templateRequired: mr.required,
+      });
+      const needed = Math.max(mr.minCount ?? 0, effectivelyRequired ? 1 : 0);
       const files = stage.mediaAssets.filter((asset) =>
         asset.assignments.some(
           (a) =>

@@ -362,6 +362,7 @@ export interface StageInstanceDto {
   id: string;
   status: string;
   stageTemplate: { id: string; code: string; name: string; sortOrder: number };
+  impressionCaptureMode?: 'SCAN' | 'IMPRESSION' | null;
   completeness?: StageCompletenessResult;
   closurePermission?: StageClosurePermissionResult;
 }
@@ -529,6 +530,11 @@ export const stagesApi = {
     request<{ id: string }>(`/api/v1/stages/${id}/confirm`, {
       method: 'POST',
       body: confirmationText ? { confirmationText } : {},
+    }),
+  setImpressionCaptureMode: (id: string, impressionCaptureMode: 'SCAN' | 'IMPRESSION') =>
+    request<StageDetailDto>(`/api/v1/stages/${id}/impression-capture-mode`, {
+      method: 'PATCH',
+      body: { impressionCaptureMode },
     }),
   emergency: (id: string, data: { description: string }) =>
     request<{ id: string }>(`/api/v1/stages/${id}/emergency-events`, { method: 'POST', body: data }),

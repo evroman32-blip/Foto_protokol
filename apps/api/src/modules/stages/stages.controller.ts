@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { ImpressionCaptureMode } from '@mandarin/contracts';
 import { AuditAction } from '../../common/decorators/metadata.decorators';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { StagesService } from './stages.service';
@@ -22,6 +23,11 @@ class ReopenStageDto {
   reason!: string;
 }
 
+class UpdateImpressionModeDto {
+  @IsEnum(ImpressionCaptureMode, { message: 'Укажите SCAN или IMPRESSION' })
+  impressionCaptureMode!: ImpressionCaptureMode;
+}
+
 @ApiTags('stages')
 @Controller('stages')
 export class StagesController {
@@ -37,6 +43,21 @@ export class StagesController {
   @ApiOperation({ summary: 'Проверка полноты этапа' })
   completeness(@Param('stageId') stageId: string) {
     return this.stagesService.getCompleteness(stageId);
+  }
+
+  @Patch(':stageId/impression-capture-mode')
+  @AuditAction('stage.impression_capture_mode')
+  @ApiOperation({ summary: 'Выбор скан или оттиск на этапе IMPRESSIONS_OR_SCANS' })
+  setImpressionCaptureMode(
+    @Param('stageId') stageId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateImpressionModeDto,
+  ) {
+    return this.stagesService.setImpressionCaptureMode(
+      stageId,
+      user,
+      dto.impressionCaptureMode,
+    );
   }
 
   @Post(':stageId/confirm')

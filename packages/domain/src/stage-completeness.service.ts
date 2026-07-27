@@ -22,6 +22,40 @@ const NON_COUNTABLE_STATUSES = new Set([
   'ADDITIONAL',
 ]);
 
+const IMP_SCAN_CODES = new Set(['IMP_SCAN_UPPER', 'IMP_SCAN_LOWER']);
+const IMP_PHOTO_CODES = new Set([
+  'IMP_PHOTO_IMPRESSIONS_UPPER',
+  'IMP_PHOTO_IMPRESSIONS_LOWER',
+  'IMP_PHOTO_IMPRESSIONS',
+]);
+
+/**
+ * Учитывает переключатель скан/оттиск на этапе IMPRESSIONS_OR_SCANS.
+ * Шаблонные required=true сохраняются; runtime-режим снимает блокировку с неактивной ветки.
+ */
+export function isMediaRequirementEffectivelyRequired(opts: {
+  stageCode: string;
+  impressionCaptureMode?: 'SCAN' | 'IMPRESSION' | null;
+  code: string;
+  templateRequired: boolean;
+}): boolean {
+  if (!opts.templateRequired) return false;
+  if (opts.code === 'ADDITIONAL_MEDIA' || opts.code.endsWith('_ADDITIONAL_MEDIA')) {
+    return false;
+  }
+  if (opts.stageCode !== 'IMPRESSIONS_OR_SCANS') return true;
+
+  const isScan = IMP_SCAN_CODES.has(opts.code);
+  const isPhoto = IMP_PHOTO_CODES.has(opts.code);
+  if (!isScan && !isPhoto) return true;
+
+  const mode = opts.impressionCaptureMode as string | null | undefined;
+  if (!mode) return false;
+  if (mode === 'SCAN') return isScan;
+  if (mode === 'IMPRESSION') return isPhoto;
+  return true;
+}
+
 function emptyResult(): CompletenessResult {
   return {
     isComplete: false,
@@ -180,9 +214,23 @@ export class StageCompletenessService {
     input: StageCompletenessInput,
     result: CompletenessResult,
   ) {
+    if (input.stageCode === 'IMPRESSIONS_OR_SCANS' && !input.impressionCaptureMode) {
+      pushUnique(result.missingClinicalFields, 'impressionCaptureMode');
+      pushUnique(
+        result.blockingReasons,
+        'Не выбран способ получения: скан или оттиск.',
+      );
+    }
+
     for (const req of input.requirements) {
-      if (!req.required) continue;
-      if (req.code === 'ADDITIONAL_MEDIA' || req.code.endsWith('_ADDITIONAL_MEDIA')) {
+      if (
+        !isMediaRequirementEffectivelyRequired({
+          stageCode: input.stageCode,
+          impressionCaptureMode: input.impressionCaptureMode,
+          code: req.code,
+          templateRequired: req.required,
+        })
+      ) {
         continue;
       }
       // Structured data / confirmation handled in surgical checks

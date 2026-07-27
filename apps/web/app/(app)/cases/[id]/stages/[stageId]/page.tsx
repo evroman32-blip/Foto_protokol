@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { CompletenessSummary } from '@/components/CompletenessSummary';
+import { ImpressionCaptureModeToggle } from '@/components/ImpressionCaptureModeToggle';
 import { JawRelationBanner } from '@/components/JawRelationBanner';
 import { MediaViewer } from '@/components/MediaViewer';
 import { PageHeader } from '@/components/PageHeader';
@@ -61,6 +62,7 @@ export default function StageDetailPage() {
   > | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState(false);
+  const [modeBusy, setModeBusy] = useState(false);
   const [busyMedia, setBusyMedia] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -234,6 +236,35 @@ export default function StageDetailPage() {
 
       {stage.stageTemplate.code === 'JAW_RELATION' ? (
         <JawRelationBanner stageCode={stage.stageTemplate.code} completeness={completeness} />
+      ) : null}
+
+      {stage.stageTemplate.code === 'IMPRESSIONS_OR_SCANS' ? (
+        <ImpressionCaptureModeToggle
+          value={stage.impressionCaptureMode}
+          busy={modeBusy}
+          disabled={stage.status === 'CLOSED'}
+          onChange={(mode) => {
+            void (async () => {
+              setModeBusy(true);
+              setError(null);
+              try {
+                await stagesApi.setImpressionCaptureMode(stageId, mode);
+                setMessage(
+                  mode === 'SCAN'
+                    ? 'Выбран скан: обязательны STL/OBJ верхней и нижней челюсти.'
+                    : 'Выбран оттиск: обязательны фото оттисков ВЧ и НЧ.',
+                );
+                await load();
+              } catch (err) {
+                setError(
+                  err instanceof Error ? err.message : 'Не удалось сохранить способ получения',
+                );
+              } finally {
+                setModeBusy(false);
+              }
+            })();
+          }}
+        />
       ) : null}
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">

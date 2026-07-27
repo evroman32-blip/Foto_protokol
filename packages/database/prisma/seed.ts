@@ -282,10 +282,17 @@ function impressionsRequirements(): ReqDef[] {
       sortOrder: 3,
     },
     {
-      code: 'IMP_PHOTO_IMPRESSIONS',
-      name: 'Фото оттисков',
+      code: 'IMP_PHOTO_IMPRESSIONS_UPPER',
+      name: 'Фото оттисков верхней челюсти',
       mediaType: MediaType.PHOTO,
       sortOrder: 4,
+      qualityProfileName: 'photo-standard',
+    },
+    {
+      code: 'IMP_PHOTO_IMPRESSIONS_LOWER',
+      name: 'Фото оттисков нижней челюсти',
+      mediaType: MediaType.PHOTO,
+      sortOrder: 5,
       qualityProfileName: 'photo-standard',
     },
     {
@@ -294,7 +301,7 @@ function impressionsRequirements(): ReqDef[] {
       mediaType: MediaType.PHOTO,
       required: false,
       minCount: 0,
-      sortOrder: 5,
+      sortOrder: 6,
       qualityProfileName: 'photo-standard',
     },
   ];

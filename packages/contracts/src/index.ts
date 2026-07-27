@@ -38,6 +38,12 @@ export enum StageCode {
   CORRECTIONS_REMAKES_COMPLICATIONS = 'CORRECTIONS_REMAKES_COMPLICATIONS',
 }
 
+/** IMPRESSIONS_OR_SCANS: доктор делает либо сканы, либо оттиски */
+export enum ImpressionCaptureMode {
+  SCAN = 'SCAN',
+  IMPRESSION = 'IMPRESSION',
+}
+
 export enum StageOwnerRole {
   ORTHOPEDIST = 'ORTHOPEDIST',
   SURGEON = 'SURGEON',
@@ -288,6 +294,8 @@ export interface StageCompletenessInput {
     workingHeightMm?: number | null;
     registrationConclusion?: string | null;
   };
+  /** SCAN | IMPRESSION | null — только для IMPRESSIONS_OR_SCANS */
+  impressionCaptureMode?: ImpressionCaptureMode | 'SCAN' | 'IMPRESSION' | null;
   emergencyEventsCount?: number;
 }
 
