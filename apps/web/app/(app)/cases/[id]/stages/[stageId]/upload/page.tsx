@@ -29,6 +29,8 @@ import {
 
 type MediaTab = 'photo' | 'video' | 'docs' | 'stl' | 'radiology' | 'checklist' | 'history';
 
+const DESIRED_TOOTH_SHADES = ['BL1', 'BL2', 'BL3', 'BL4', 'B1', 'A1', 'A2', 'A3', 'A4'] as const;
+
 const TAB_MEDIA_TYPES: Record<MediaTab, string[] | null> = {
   photo: ['PHOTO'],
   video: ['VIDEO'],
@@ -141,6 +143,8 @@ export default function StageUploadPage() {
   const [impressionCaptureMode, setImpressionCaptureMode] = useState<
     'SCAN' | 'IMPRESSION' | null
   >(null);
+  const [desiredToothShade, setDesiredToothShade] = useState<string>('');
+  const [shadeBusy, setShadeBusy] = useState(false);
   const [modeBusy, setModeBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -156,6 +160,7 @@ export default function StageUploadPage() {
       const stage = await stagesApi.get(stageId);
       setStageCode(stage.stageTemplate.code);
       setImpressionCaptureMode(stage.impressionCaptureMode ?? null);
+      setDesiredToothShade(stage.desiredToothShade ?? '');
       const reqs = [...(stage.requirementInstances ?? [])]
         .filter((r) => r.mediaRequirement.isActive !== false)
         .sort(
@@ -191,14 +196,37 @@ export default function StageUploadPage() {
   const tabMediaTypes = TAB_MEDIA_TYPES[activeTab];
   const canUploadOnTab = tabMediaTypes != null;
 
+  /** Все активные положения шаблона в порядке протокола. */
+  const protocolOrderedRequirements = useMemo(() => {
+    return [...requirements]
+      .filter(
+        (r) =>
+          r.mediaRequirement.isActive !== false &&
+          isUploadableMediaType(r.mediaRequirement.mediaType),
+      )
+      .sort((a, b) => {
+        const ao = a.mediaRequirement.sortOrder ?? 0;
+        const bo = b.mediaRequirement.sortOrder ?? 0;
+        if (ao !== bo) return ao - bo;
+        return (a.mediaRequirement.code ?? '').localeCompare(b.mediaRequirement.code ?? '');
+      });
+  }, [requirements]);
+
+  const protocolNumberById = useMemo(() => {
+    const map = new Map<string, number>();
+    protocolOrderedRequirements.forEach((r, idx) => {
+      map.set(r.id, idx + 1);
+    });
+    return map;
+  }, [protocolOrderedRequirements]);
+
   const visibleRequirements = useMemo(() => {
+    // Чек-лист / история — без карточек загрузки.
     if (!tabMediaTypes) return [];
-    return requirements.filter(
-      (r) =>
-        isUploadableMediaType(r.mediaRequirement.mediaType) &&
-        tabMediaTypes.includes(r.mediaRequirement.mediaType),
-    );
-  }, [requirements, tabMediaTypes]);
+    // Все активные положения шаблона (фото + рентген + …),
+    // чтобы нумерация и состав совпадали с админкой протокола.
+    return protocolOrderedRequirements;
+  }, [tabMediaTypes, protocolOrderedRequirements]);
 
   const tabsWithRequirements = useMemo(() => {
     const types = new Set(
@@ -566,7 +594,7 @@ export default function StageUploadPage() {
           const needed = Math.max(req.minCount || (effectivelyRequired ? 1 : 0), 0);
           const filled = assigned >= needed && needed > 0;
           const selected = filesByReq[ri.id];
-          const order = req.sortOrder;
+          const order = protocolNumberById.get(ri.id) ?? req.sortOrder;
 
           return (
             <div
@@ -582,6 +610,9 @@ export default function StageUploadPage() {
                   <div className="mt-1 text-xs text-gray-500">
                     {mediaTypeLabel(req.mediaType)} · код {req.code}
                   </div>
+                  {req.instruction ? (
+                    <div className="mt-1 text-xs text-gray-500">{req.instruction}</div>
+                  ) : null}
                 </div>
                 <div className="text-right text-xs">
                   {inactiveHint ? (
@@ -597,6 +628,49 @@ export default function StageUploadPage() {
                   </div>
                 </div>
               </div>
+
+              {req.specialRule === 'desiredToothShade' ||
+              req.code === 'JR_DESIRED_TOOTH_FORM_FRONT' ? (
+                <div>
+                  <label className="label-field" htmlFor={`shade-${ri.id}`}>
+                    Желаемый цвет зубов
+                  </label>
+                  <select
+                    id={`shade-${ri.id}`}
+                    className="input-field"
+                    value={desiredToothShade}
+                    disabled={busy || shadeBusy}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDesiredToothShade(value);
+                      if (!value) return;
+                      void (async () => {
+                        setShadeBusy(true);
+                        setError(null);
+                        try {
+                          await stagesApi.setDesiredToothShade(stageId, value);
+                          setMessage(`Цвет зубов сохранён: ${value}`);
+                        } catch (err) {
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : 'Не удалось сохранить цвет зубов',
+                          );
+                        } finally {
+                          setShadeBusy(false);
+                        }
+                      })();
+                    }}
+                  >
+                    <option value="">Выберите цвет…</option>
+                    {DESIRED_TOOTH_SHADES.map((shade) => (
+                      <option key={shade} value={shade}>
+                        {shade}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               {currentAssets.length > 0 ? (
                 <div className="space-y-2 rounded border border-border bg-surface-muted/40 px-3 py-2 text-sm">

@@ -47,6 +47,7 @@ export function createJawRelationInput(dependencyClosed = false): StageCompleten
       restHeightMm: 65,
       workingHeightMm: 58,
       registrationConclusion: 'ACCEPTABLE_FOR_LAB',
+      desiredToothShade: 'A2',
     },
   });
 }

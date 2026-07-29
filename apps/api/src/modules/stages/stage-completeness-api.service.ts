@@ -189,6 +189,7 @@ export class StageCompletenessApiService {
         restHeightMm: stage.restHeightMm ? Number(stage.restHeightMm) : null,
         workingHeightMm: stage.workingHeightMm ? Number(stage.workingHeightMm) : null,
         registrationConclusion: stage.registrationConclusion,
+        desiredToothShade: stage.desiredToothShade ?? null,
       },
       impressionCaptureMode: stage.impressionCaptureMode ?? null,
       emergencyEventsCount: stage.emergencyEvents.length,

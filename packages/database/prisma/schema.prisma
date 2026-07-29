@@ -409,6 +409,8 @@ model StageInstance {
   registrationConclusion RegistrationConclusion?
   clinicalComment       String?
   impressionCaptureMode ImpressionCaptureMode?
+  /** Желаемый цвет зубов (VITA/bleach): BL1–BL4, B1, A1–A4 — этап JAW_RELATION */
+  desiredToothShade     String?
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
   requirementInstances  RequirementInstance[]

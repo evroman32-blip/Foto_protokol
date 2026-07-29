@@ -357,17 +357,12 @@ export class StageCompletenessService {
       );
       return;
     }
-    if (fields.restHeightMm == null) {
-      pushUnique(result.missingClinicalFields, 'restHeightMm');
-      pushUnique(result.blockingReasons, 'Не указана высота покоя.');
-    }
-    if (fields.workingHeightMm == null) {
-      pushUnique(result.missingClinicalFields, 'workingHeightMm');
-      pushUnique(result.blockingReasons, 'Не указана рабочая высота.');
-    }
-    if (fields.registrationConclusion == null) {
-      pushUnique(result.missingClinicalFields, 'registrationConclusion');
-      pushUnique(result.blockingReasons, 'Не указано заключение по регистрации.');
+    if (!fields.desiredToothShade) {
+      pushUnique(result.missingClinicalFields, 'desiredToothShade');
+      pushUnique(
+        result.blockingReasons,
+        'Не выбран желаемый цвет зубов (положение «Желаемая форма зубов»).',
+      );
     }
   }
 

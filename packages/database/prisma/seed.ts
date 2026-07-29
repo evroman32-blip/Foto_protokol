@@ -93,6 +93,7 @@ type ReqDef = {
   minCount?: number;
   sortOrder: number;
   specialRule?: string;
+  instruction?: string;
   qualityProfileName?: string;
 };
 
@@ -142,32 +143,82 @@ function postopRequirements(): ReqDef[] {
 }
 
 function jawRelationRequirements(): ReqDef[] {
-  const codes: Array<[string, string]> = [
-    ['JR_UPPER_TEMPLATE_PRIMARY', 'Верхний шаблон primary'],
-    ['JR_LOWER_TEMPLATE_PRIMARY', 'Нижний шаблон primary'],
-    ['JR_BOTH_TEMPLATES', 'Оба шаблона'],
-    ['JR_UPPER_LIP_SUPPORT', 'Поддержка верхней губы'],
-    ['JR_CHEEK_SUPPORT', 'Поддержка щеки'],
-    ['JR_UPPER_RIM_VISIBILITY', 'Видимость верхней губной линии'],
-    ['JR_PROSTHETIC_PLANE', 'Протезная плоскость'],
-    ['JR_CAMPER_LINE', 'Линия Кэмпера'],
-    ['JR_LARIN_DEVICE', 'Прибор Larin'],
-    ['JR_MIDLINE', 'Средняя линия'],
-    ['JR_CANINE_LINES', 'Клыковые линии'],
-    ['JR_SMILE_LINE', 'Линия улыбки'],
-    ['JR_REST_HEIGHT_MEASUREMENT', 'Измерение высоты покоя'],
-    ['JR_WORKING_HEIGHT', 'Рабочая высота'],
-    ['JR_FINAL_WAX_REGISTRATION', 'Финальная wax-регистрация'],
-    ['JR_REGISTRATION_REINSERTED', 'Регистрация reinserted'],
-    ['JR_BEFORE_OPTG', 'ОПТГ до этапа'],
-    ['JR_OPTG_DOCUMENT', 'Документ ОПТГ'],
+  const items: Array<{
+    code: string;
+    name: string;
+    mediaType: MediaType;
+    specialRule?: string;
+    instruction?: string;
+  }> = [
+    { code: 'JR_LARIN_FRONT', name: 'Larin анфас', mediaType: MediaType.PHOTO },
+    { code: 'JR_LARIN_PROFILE_RIGHT', name: 'Larin профиль справа', mediaType: MediaType.PHOTO },
+    { code: 'JR_LARIN_PROFILE_LEFT', name: 'Larin профиль слева', mediaType: MediaType.PHOTO },
+    {
+      code: 'JR_BITE_HEIGHT_STAGE_1',
+      name: 'Определение высоты прикуса (высота покоя)',
+      mediaType: MediaType.PHOTO,
+    },
+    {
+      code: 'JR_BITE_HEIGHT_STAGE_2',
+      name: 'Определение высоты прикуса (рабочая высота)',
+      mediaType: MediaType.PHOTO,
+    },
+    {
+      code: 'JR_UPPER_RIM_INCISORS_FRONT',
+      name: 'Видимость верхне-губной линии резцов анфас',
+      mediaType: MediaType.PHOTO,
+    },
+    {
+      code: 'JR_UPPER_RIM_INCISORS_PROFILE',
+      name: 'Видимость верхне-губной линии резцов профиль',
+      mediaType: MediaType.PHOTO,
+    },
+    { code: 'JR_MIDLINE', name: 'Средняя линия', mediaType: MediaType.PHOTO },
+    { code: 'JR_CANINE_LINE', name: 'Клыковая линия', mediaType: MediaType.PHOTO },
+    {
+      code: 'JR_UPPER_LIP_SUPPORT_FRONT',
+      name: 'Поддержка верхней губы анфас (оба шаблона, губы сомкнуты, без напряжения)',
+      mediaType: MediaType.PHOTO,
+      instruction: 'Оба шаблона, губы сомкнуты, без напряжения',
+    },
+    {
+      code: 'JR_UPPER_LIP_SUPPORT_PROFILE',
+      name: 'Поддержка верхней губы профиль (оба шаблона, губы сомкнуты, без напряжения)',
+      mediaType: MediaType.PHOTO,
+      instruction: 'Оба шаблона, губы сомкнуты, без напряжения',
+    },
+    {
+      code: 'JR_DESIRED_TOOTH_FORM_FRONT',
+      name: 'Желаемая форма зубов (фронт)',
+      mediaType: MediaType.PHOTO,
+      specialRule: 'desiredToothShade',
+      instruction: 'Выберите желаемый цвет зубов: BL1–BL4, B1, A1–A4',
+    },
+    {
+      code: 'JR_OPTG_WITH_TEMPLATES',
+      name: 'ОПТГ с шаблонами',
+      mediaType: MediaType.RADIOLOGY_IMAGE,
+    },
+    {
+      code: 'JR_TMJ_RIGHT',
+      name: 'R-грамма ВНЧС справа',
+      mediaType: MediaType.RADIOLOGY_IMAGE,
+    },
+    {
+      code: 'JR_TMJ_LEFT',
+      name: 'R-грамма ВНЧС слева',
+      mediaType: MediaType.RADIOLOGY_IMAGE,
+    },
   ];
-  return codes.map(([code, name], i) => ({
-    code,
-    name,
-    mediaType: code.includes('OPTG') ? MediaType.RADIOLOGY_IMAGE : MediaType.PHOTO,
+  return items.map((item, i) => ({
+    code: item.code,
+    name: item.name,
+    mediaType: item.mediaType,
     sortOrder: i + 1,
-    qualityProfileName: 'photo-standard',
+    specialRule: item.specialRule,
+    instruction: item.instruction,
+    qualityProfileName:
+      item.mediaType === MediaType.RADIOLOGY_IMAGE ? undefined : 'photo-standard',
   }));
 }
 
@@ -642,6 +693,7 @@ async function main() {
             sortOrder: req.sortOrder,
             allowMultiple: false,
             specialRule: req.specialRule ?? null,
+            instruction: req.instruction ?? null,
             qualityProfileId: req.qualityProfileName ? profileByName[req.qualityProfileName] : null,
           },
         });

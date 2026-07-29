@@ -363,6 +363,7 @@ export interface StageInstanceDto {
   status: string;
   stageTemplate: { id: string; code: string; name: string; sortOrder: number };
   impressionCaptureMode?: 'SCAN' | 'IMPRESSION' | null;
+  desiredToothShade?: string | null;
   completeness?: StageCompletenessResult;
   closurePermission?: StageClosurePermissionResult;
 }
@@ -466,6 +467,8 @@ export interface MediaRequirementDto {
   maxCount?: number | null;
   sortOrder: number;
   isActive?: boolean;
+  specialRule?: string | null;
+  instruction?: string | null;
 }
 
 export interface RequirementInstanceDto {
@@ -535,6 +538,11 @@ export const stagesApi = {
     request<StageDetailDto>(`/api/v1/stages/${id}/impression-capture-mode`, {
       method: 'PATCH',
       body: { impressionCaptureMode },
+    }),
+  setDesiredToothShade: (id: string, desiredToothShade: string) =>
+    request<StageDetailDto>(`/api/v1/stages/${id}/desired-tooth-shade`, {
+      method: 'PATCH',
+      body: { desiredToothShade },
     }),
   emergency: (id: string, data: { description: string }) =>
     request<{ id: string }>(`/api/v1/stages/${id}/emergency-events`, { method: 'POST', body: data }),

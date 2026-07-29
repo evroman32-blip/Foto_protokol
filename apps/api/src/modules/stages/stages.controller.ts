@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { ImpressionCaptureMode } from '@mandarin/contracts';
@@ -26,6 +26,13 @@ class ReopenStageDto {
 class UpdateImpressionModeDto {
   @IsEnum(ImpressionCaptureMode, { message: 'Укажите SCAN или IMPRESSION' })
   impressionCaptureMode!: ImpressionCaptureMode;
+}
+
+const TOOTH_SHADES = ['BL1', 'BL2', 'BL3', 'BL4', 'B1', 'A1', 'A2', 'A3', 'A4'] as const;
+
+class UpdateDesiredToothShadeDto {
+  @IsString({ message: 'Укажите цвет зубов' })
+  desiredToothShade!: string;
 }
 
 @ApiTags('stages')
@@ -58,6 +65,25 @@ export class StagesController {
       user,
       dto.impressionCaptureMode,
     );
+  }
+
+  @Patch(':stageId/desired-tooth-shade')
+  @AuditAction('stage.desired_tooth_shade')
+  @ApiOperation({ summary: 'Желаемый цвет зубов на этапе JAW_RELATION' })
+  setDesiredToothShade(
+    @Param('stageId') stageId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateDesiredToothShadeDto,
+  ) {
+    const shade = String(dto.desiredToothShade ?? '')
+      .trim()
+      .toUpperCase();
+    if (!(TOOTH_SHADES as readonly string[]).includes(shade)) {
+      throw new BadRequestException(
+        `Допустимые значения: ${TOOTH_SHADES.join(', ')}`,
+      );
+    }
+    return this.stagesService.setDesiredToothShade(stageId, user, shade);
   }
 
   @Post(':stageId/confirm')

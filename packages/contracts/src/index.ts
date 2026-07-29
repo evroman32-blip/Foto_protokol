@@ -293,6 +293,7 @@ export interface StageCompletenessInput {
     restHeightMm?: number | null;
     workingHeightMm?: number | null;
     registrationConclusion?: string | null;
+    desiredToothShade?: string | null;
   };
   /** SCAN | IMPRESSION | null — только для IMPRESSIONS_OR_SCANS */
   impressionCaptureMode?: ImpressionCaptureMode | 'SCAN' | 'IMPRESSION' | null;

@@ -44,6 +44,7 @@ describe('StageCompletenessService (API unit)', () => {
       workingHeightMm: 12,
       optgStatus: null,
       registrationConclusion: 'ACCEPTABLE_FOR_LAB',
+      desiredToothShade: 'A2',
     },
     dependencyStages: [
       {

@@ -149,6 +149,33 @@ export class StagesService {
     });
   }
 
+  async setDesiredToothShade(stageId: string, user: AuthUser, desiredToothShade: string) {
+    const stage = await this.prisma.stageInstance.findUnique({
+      where: { id: stageId },
+      include: { stageTemplate: true },
+    });
+    if (!stage) throw new NotFoundException('Этап не найден');
+    if (stage.stageTemplate.code !== StageCode.JAW_RELATION) {
+      throw new BadRequestException(
+        'Выбор цвета зубов доступен только на этапе межчелюстных соотношений',
+      );
+    }
+    if (stage.status === StageInstanceStatus.CLOSED) {
+      throw new BadRequestException('Нельзя менять цвет зубов на закрытом этапе');
+    }
+    this.assertRoleCanActOnStage(
+      user.role,
+      stage.stageTemplate.ownerRole as StageOwnerRole,
+      'confirm',
+    );
+
+    return this.prisma.stageInstance.update({
+      where: { id: stageId },
+      data: { desiredToothShade },
+      include: { stageTemplate: true },
+    });
+  }
+
   async confirm(stageId: string, user: AuthUser, confirmationText?: string) {
     const stage = await this.findOne(stageId);
 
