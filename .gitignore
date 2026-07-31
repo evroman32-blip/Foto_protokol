@@ -7,8 +7,10 @@ coverage/
 *.tsbuildinfo
 .env
 .env.local
+.env.demo
 .env.*.local
 !.env.example
+!.env.demo.example
 uploads/
 tmp/
 *.log
@@ -26,6 +28,8 @@ prisma/*.db-journal
 .redis-data/
 *.pem
 secrets/
+mandarin-timeweb-demo.tgz
+mandarin-demo.tgz
 
 # Local infra binaries/archives (too large for GitHub; keep on disk only)
 tools/minio.exe

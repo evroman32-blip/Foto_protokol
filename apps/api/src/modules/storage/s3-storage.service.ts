@@ -11,20 +11,37 @@ import { randomUUID } from 'crypto';
 @Injectable()
 export class S3StorageService {
   private readonly client: S3Client;
+  /** Client with public endpoint for browser-facing signed URLs */
+  private readonly publicClient: S3Client;
   private readonly bucket: string;
 
   constructor() {
     this.bucket = process.env.S3_BUCKET ?? 'photoprotocol';
+    const region = process.env.S3_REGION ?? 'us-east-1';
+    const forcePathStyle = (process.env.S3_FORCE_PATH_STYLE ?? 'true') === 'true';
+    const credentials = {
+      accessKeyId:
+        process.env.S3_ACCESS_KEY_ID ?? process.env.S3_ACCESS_KEY ?? 'minioadmin',
+      secretAccessKey:
+        process.env.S3_SECRET_ACCESS_KEY ?? process.env.S3_SECRET_KEY ?? 'minioadmin',
+    };
+    const internalEndpoint = process.env.S3_ENDPOINT ?? 'http://localhost:9000';
+    const publicEndpoint =
+      process.env.S3_PUBLIC_ENDPOINT ||
+      process.env.S3_PUBLIC_BASE_URL ||
+      internalEndpoint;
+
     this.client = new S3Client({
-      region: process.env.S3_REGION ?? 'us-east-1',
-      endpoint: process.env.S3_ENDPOINT ?? 'http://localhost:9000',
-      forcePathStyle: (process.env.S3_FORCE_PATH_STYLE ?? 'true') === 'true',
-      credentials: {
-        accessKeyId:
-          process.env.S3_ACCESS_KEY_ID ?? process.env.S3_ACCESS_KEY ?? 'minioadmin',
-        secretAccessKey:
-          process.env.S3_SECRET_ACCESS_KEY ?? process.env.S3_SECRET_KEY ?? 'minioadmin',
-      },
+      region,
+      endpoint: internalEndpoint,
+      forcePathStyle,
+      credentials,
+    });
+    this.publicClient = new S3Client({
+      region,
+      endpoint: publicEndpoint,
+      forcePathStyle,
+      credentials,
     });
   }
 
@@ -39,7 +56,8 @@ export class S3StorageService {
       Key: objectKey,
       ContentType: mimeType,
     });
-    const url = await getSignedUrl(this.client, command, { expiresIn });
+    // Uploads go through API in most flows; public host keeps browser CORS/simple PUTs working in demo.
+    const url = await getSignedUrl(this.publicClient, command, { expiresIn });
     return { url, objectKey, bucket: this.bucket };
   }
 
@@ -48,7 +66,7 @@ export class S3StorageService {
       Bucket: this.bucket,
       Key: objectKey,
     });
-    return getSignedUrl(this.client, command, { expiresIn });
+    return getSignedUrl(this.publicClient, command, { expiresIn });
   }
 
   async getObjectBuffer(objectKey: string): Promise<{ body: Buffer; contentType?: string }> {

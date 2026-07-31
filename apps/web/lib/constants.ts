@@ -1,8 +1,12 @@
 export const AUTH_TOKEN_KEY = 'mandarin_auth_token';
 export const AUTH_COOKIE = 'mandarin_auth_token';
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ?? 'http://localhost:3001';
+/** Browser: NEXT_PUBLIC_API_URL (can be same-origin ''). Server: API_URL → Nest. */
+export const API_BASE = (
+  (typeof window === 'undefined'
+    ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL
+    : process.env.NEXT_PUBLIC_API_URL) ?? 'http://localhost:3001'
+).replace(/\/$/, '');
 
 export const BRAND = {
   title: 'Mandarin PhotoProtocol',
