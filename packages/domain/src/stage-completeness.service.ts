@@ -9,11 +9,11 @@ import {
 } from '@mandarin/contracts';
 
 const REQUIRED_PARTICIPANTS: ParticipantRole[] = [
-  ParticipantRole.CONSULTING_DOCTOR,
-  ParticipantRole.ORTHOPEDIST,
-  ParticipantRole.SURGEON,
-  ParticipantRole.DENTAL_TECHNICIAN,
-];
+    ParticipantRole.CONSULTING_DOCTOR,
+    ParticipantRole.ORTHOPEDIST,
+    ParticipantRole.SURGEON,
+    ParticipantRole.DENTAL_TECHNICIAN,
+  ];
 
 const NON_COUNTABLE_STATUSES = new Set([
   'TECHNICALLY_REJECTED',

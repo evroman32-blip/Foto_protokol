@@ -329,10 +329,11 @@ export default function StageUploadPage() {
   function openViewerForRequirement(ri: RequirementInstanceDto) {
     const code = ri.mediaRequirement.code;
     const current = assetsForRequirement(assets, ri.id, code);
-    if (!current.length) return;
+    const first = current[0];
+    if (!first) return;
     const index = Math.max(
       0,
-      protocolAssetsSorted.findIndex((a) => a.id === current[0].id),
+      protocolAssetsSorted.findIndex((a) => a.id === first.id),
     );
     setViewer({ assets: protocolAssetsSorted, index });
   }

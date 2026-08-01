@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/States';
-import { managementApi } from '@/lib/api';
+import { managementApi, type EmergencyEventDto } from '@/lib/api';
 
 export default function EmergencyEventsPage() {
-  const [events, setEvents] = useState<Array<Record<string, unknown>>>([]);
+  const [events, setEvents] = useState<EmergencyEventDto[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,10 +33,10 @@ export default function EmergencyEventsPage() {
           </thead>
           <tbody>
             {events.map((e) => (
-              <tr key={String(e.id)}>
-                <td>{e.occurredAt ? new Date(String(e.occurredAt)).toLocaleString('ru-RU') : '—'}</td>
-                <td>{String(e.reason ?? '—')}</td>
-                <td>{String(e.clinicalSituation ?? '—')}</td>
+              <tr key={e.id}>
+                <td>{e.occurredAt ? new Date(e.occurredAt).toLocaleString('ru-RU') : '—'}</td>
+                <td>{e.reason || '—'}</td>
+                <td>{e.clinicalSituation || '—'}</td>
               </tr>
             ))}
           </tbody>

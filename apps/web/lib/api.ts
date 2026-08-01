@@ -771,6 +771,24 @@ export interface AuditEventDto {
   createdAt: string;
 }
 
+export interface EmergencyEventDto {
+  id: string;
+  occurredAt: string;
+  reason: string;
+  clinicalSituation: string;
+}
+
+export interface IntegrationEventDto {
+  id: string;
+  eventType: string;
+  status?: string;
+  createdAt: string;
+}
+
+export type IntegrationEventsResponse =
+  | IntegrationEventDto[]
+  | { enabled: boolean; status?: string; events: IntegrationEventDto[] };
+
 export const managementApi = {
   audit: (params?: { from?: string; to?: string; eventType?: string; caseId?: string }) => {
     const search = new URLSearchParams();
@@ -781,8 +799,8 @@ export const managementApi = {
     const qs = search.toString();
     return request<AuditEventDto[]>(`/api/v1/audit${qs ? `?${qs}` : ''}`);
   },
-  emergencyEvents: () => request<AuditEventDto[]>('/api/v1/management/emergency-events'),
-  integrationEvents: () => request<AuditEventDto[]>('/api/v1/management/integration-events'),
+  emergencyEvents: () => request<EmergencyEventDto[]>('/api/v1/management/emergency-events'),
+  integrationEvents: () => request<IntegrationEventsResponse>('/api/v1/management/integration-events'),
   reports: () => request<Array<{ id: string; reportType: string; generatedAt: string }>>('/api/v1/management/reports'),
 };
 

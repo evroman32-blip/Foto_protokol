@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/States';
-import { managementApi } from '@/lib/api';
+import { managementApi, type IntegrationEventsResponse, type IntegrationEventDto } from '@/lib/api';
 
 export default function IntegrationEventsPage() {
-  const [data, setData] = useState<{ enabled?: boolean; events?: unknown[] } | unknown[]>([]);
+  const [data, setData] = useState<IntegrationEventsResponse>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,8 +19,10 @@ export default function IntegrationEventsPage() {
 
   if (loading) return <LoadingState />;
 
-  const events = Array.isArray(data) ? data : (data as { events?: unknown[] }).events ?? [];
-  const disabled = !Array.isArray(data) && (data as { enabled?: boolean }).enabled === false;
+  const events: IntegrationEventDto[] = Array.isArray(data)
+    ? data
+    : data.events ?? [];
+  const disabled = !Array.isArray(data) && data.enabled === false;
 
   return (
     <div>
@@ -38,16 +40,13 @@ export default function IntegrationEventsPage() {
               </tr>
             </thead>
             <tbody>
-              {events.map((e) => {
-                const row = e as Record<string, unknown>;
-                return (
-                  <tr key={String(row.id)}>
-                    <td>{String(row.eventType ?? '—')}</td>
-                    <td>{String(row.status ?? '—')}</td>
-                    <td>{row.createdAt ? new Date(String(row.createdAt)).toLocaleString('ru-RU') : '—'}</td>
-                  </tr>
-                );
-              })}
+              {events.map((e) => (
+                <tr key={e.id}>
+                  <td>{e.eventType}</td>
+                  <td>{e.status ?? '—'}</td>
+                  <td>{new Date(e.createdAt).toLocaleString('ru-RU')}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

@@ -130,7 +130,7 @@ export function ImplantSliceCardsForm({
       fileSizeBytes: file.size,
     });
     await uploadApi.completeBatch(batchId);
-    const mediaId = asset.id ?? asset.mediaAssetId;
+    const mediaId = asset.id ?? (asset as { mediaAssetId?: string }).mediaAssetId;
     if (!mediaId) throw new Error('Не получен id файла после загрузки');
     return mediaId;
   }

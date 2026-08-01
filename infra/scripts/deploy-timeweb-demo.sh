@@ -13,6 +13,9 @@ if [ ! -f .env.demo ]; then
   exit 1
 fi
 
+# Windows CRLF → LF (архив с Windows часто ломает source/bash)
+sed -i 's/\r$//' .env.demo "$0" infra/docker/api-entrypoint.sh 2>/dev/null || true
+
 # shellcheck disable=SC1091
 set -a
 source .env.demo
