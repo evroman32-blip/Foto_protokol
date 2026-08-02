@@ -65,9 +65,24 @@ function assetBaseName(asset: MediaAssetDto) {
   return name.replace(/^\d+\.\s*/, '');
 }
 
+function needsBlobProxy(view: MediaViewUrlDto, asset: MediaAssetDto) {
+  if (isObjScan(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName)) {
+    return false;
+  }
+  if (isStl(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName)) {
+    return false;
+  }
+  return (
+    isImage(view.mimeType, view.mediaType) ||
+    isVideo(view.mimeType, view.mediaType) ||
+    isPdf(view.mimeType, view.mediaType)
+  );
+}
+
 export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaViewerProps) {
   const [index, setIndex] = useState(initialIndex);
   const [view, setView] = useState<MediaViewUrlDto | null>(null);
+  const [displayUrl, setDisplayUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,22 +97,42 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
   useEffect(() => {
     if (!asset) return;
     let cancelled = false;
+    let objectUrl: string | null = null;
     setLoading(true);
     setError(null);
     setView(null);
-    void mediaApi
-      .viewUrl(asset.id)
-      .then((data) => {
-        if (!cancelled) setView(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Не удалось открыть файл');
-      })
-      .finally(() => {
+    setDisplayUrl(null);
+
+    void (async () => {
+      try {
+        const data = await mediaApi.viewUrl(asset.id);
+        if (cancelled) return;
+        setView(data);
+
+        if (needsBlobProxy(data, asset)) {
+          // Signed MinIO URL через /storage или :9000 часто даёт 403 — грузим через API с Bearer
+          const buffer = await mediaApi.fetchContent(asset.id);
+          if (cancelled) return;
+          const blob = new Blob([buffer], {
+            type: data.mimeType || 'application/octet-stream',
+          });
+          objectUrl = URL.createObjectURL(blob);
+          setDisplayUrl(objectUrl);
+        } else {
+          setDisplayUrl(data.url);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Не удалось открыть файл');
+        }
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
+
     return () => {
       cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [asset?.id]);
 
@@ -113,6 +148,11 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
 
   if (!asset) return null;
 
+  const fileName = view?.originalFileName ?? asset.originalFileName;
+  const mime = view?.mimeType;
+  const mediaType = view?.mediaType ?? asset.mediaType;
+  const src = displayUrl;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
@@ -122,8 +162,7 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
     >
       <div
         className={`flex max-h-[92vh] w-full flex-col overflow-hidden rounded bg-white shadow-xl ${
-          isStl(view?.mimeType, asset.mediaType, asset.originalFileName) ||
-          isObjScan(view?.mimeType, asset.mediaType, asset.originalFileName)
+          isStl(mime, mediaType, fileName) || isObjScan(mime, mediaType, fileName)
             ? 'max-w-6xl'
             : 'max-w-5xl'
         }`}
@@ -146,22 +185,22 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
         <div className="flex min-h-[320px] flex-1 items-center justify-center bg-surface-muted/40 p-4">
           {loading ? <div className="text-sm text-gray-500">Загрузка…</div> : null}
           {error ? <div className="alert-error">{error}</div> : null}
-          {!loading && !error && view ? (
-            isObjScan(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName) ? (
+          {!loading && !error && view && src ? (
+            isObjScan(mime, mediaType, fileName) ? (
               <ObjViewer mediaId={asset.id} fallbackUrl={view.url} className="w-full" />
-            ) : isStl(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName) ? (
+            ) : isStl(mime, mediaType, fileName) ? (
               <StlViewer mediaId={asset.id} fallbackUrl={view.url} className="w-full" />
-            ) : isImage(view.mimeType, view.mediaType) ? (
+            ) : isImage(mime, mediaType) ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={view.url} alt={title} className="max-h-[70vh] max-w-full object-contain" />
-            ) : isVideo(view.mimeType, view.mediaType) ? (
-              <video src={view.url} controls className="max-h-[70vh] max-w-full" />
-            ) : isPdf(view.mimeType, view.mediaType) ? (
-              <iframe title={title} src={view.url} className="h-[70vh] w-full rounded border border-border" />
+              <img src={src} alt={title} className="max-h-[70vh] max-w-full object-contain" />
+            ) : isVideo(mime, mediaType) ? (
+              <video src={src} controls className="max-h-[70vh] max-w-full" />
+            ) : isPdf(mime, mediaType) ? (
+              <iframe title={title} src={src} className="h-[70vh] w-full rounded border border-border" />
             ) : (
               <div className="space-y-3 text-center text-sm">
                 <p>Предпросмотр для этого типа файла недоступен.</p>
-                <a href={view.url} target="_blank" rel="noreferrer" className="btn-primary inline-flex">
+                <a href={src} target="_blank" rel="noreferrer" className="btn-primary inline-flex">
                   Скачать: {title}
                 </a>
               </div>
@@ -178,9 +217,9 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
           >
             ← Предыдущий
           </button>
-          {view?.url ? (
+          {src ? (
             <a
-              href={view.url}
+              href={src}
               target="_blank"
               rel="noreferrer"
               className="text-sm text-accent underline-offset-2 hover:underline"

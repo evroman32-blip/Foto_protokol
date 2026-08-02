@@ -9,10 +9,15 @@ export async function POST(request: Request) {
     const data = await authApi.login(email, password);
 
     const response = NextResponse.json(data);
+    // secure только для HTTPS: иначе cookie не сохранится на демо по http://IP
+    const secure =
+      process.env.AUTH_COOKIE_SECURE === 'true' ||
+      (process.env.WEB_URL ?? process.env.NEXT_PUBLIC_WEB_URL ?? '').startsWith('https://');
+
     response.cookies.set(AUTH_COOKIE, data.accessToken, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure,
       path: '/',
       maxAge: 60 * 60 * 24,
     });
