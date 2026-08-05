@@ -506,6 +506,11 @@ export interface MediaAssetDto {
 export interface MediaViewUrlDto {
   id: string;
   url: string;
+  /** Same-origin путь к оригиналу (cookie auth) */
+  contentPath?: string;
+  /** Same-origin путь к превью ~1280px (если нет — API отдаст оригинал) */
+  previewPath?: string;
+  hasPreview?: boolean;
   mimeType: string;
   mediaType: string;
   originalFileName: string;
@@ -587,21 +592,47 @@ export const uploadApi = {
     }),
   completeBatch: (batchId: string) =>
     request<{ success: boolean }>(`/api/v1/upload/batches/${batchId}/complete`, { method: 'POST' }),
+  /**
+   * Загрузка через Nest API (MinIO изнутри Docker), не прямой PUT на signed URL.
+   * На Timeweb signed URL к MinIO часто даёт 403 SignatureDoesNotMatch.
+   */
   uploadFile: async (
+    batchId: string,
     presign: PresignResponse,
     file: File,
     onProgress?: (pct: number) => void,
   ): Promise<void> => {
+    const authToken = typeof window !== 'undefined' ? getStoredToken() : null;
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('objectKey', presign.objectKey);
+    form.append('uploadId', presign.uploadId);
+    form.append('mimeType', file.type || 'application/octet-stream');
+
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('PUT', presign.uploadUrl);
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.open('POST', `${API_BASE}/api/v1/upload-batches/${batchId}/files/put`);
+      if (authToken) xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      xhr.withCredentials = true;
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
       };
-      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('Upload failed')));
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else {
+          let message = `Upload failed (${xhr.status})`;
+          try {
+            const body = JSON.parse(xhr.responseText) as { message?: string | string[] };
+            const raw = body.message;
+            message = Array.isArray(raw) ? raw.join('; ') : raw ?? message;
+          } catch {
+            /* keep default */
+          }
+          reject(new Error(message));
+        }
+      };
       xhr.onerror = () => reject(new Error('Upload failed'));
-      xhr.send(file);
+      xhr.send(form);
     });
   },
 };

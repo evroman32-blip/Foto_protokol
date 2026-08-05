@@ -121,7 +121,7 @@ export function ImplantSliceCardsForm({
       mimeType: file.type || 'image/jpeg',
       size: file.size,
     });
-    await uploadApi.uploadFile(presign, file);
+    await uploadApi.uploadFile(batchId, presign, file);
     const asset = await uploadApi.completeFile(batchId, {
       uploadId: presign.uploadId,
       objectKey: presign.objectKey,

@@ -7,6 +7,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
+import { Readable } from 'stream';
 
 @Injectable()
 export class S3StorageService {
@@ -81,6 +82,44 @@ export class S3StorageService {
     return {
       body: Buffer.from(bytes),
       contentType: result.ContentType,
+    };
+  }
+
+  /** Стрим из MinIO как Node.js Readable (для Nest StreamableFile) */
+  async getObjectStream(objectKey: string): Promise<{
+    body: Readable;
+    contentType?: string;
+    contentLength?: number;
+  }> {
+    const result = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: objectKey,
+      }),
+    );
+    if (!result.Body) throw new Error('Пустой объект в хранилище');
+
+    const raw = result.Body as {
+      pipe?: unknown;
+      transformToWebStream?: () => ReadableStream;
+      transformToByteArray?: () => Promise<Uint8Array>;
+    };
+
+    let body: Readable;
+    if (typeof raw.pipe === 'function') {
+      body = raw as unknown as Readable;
+    } else if (typeof raw.transformToWebStream === 'function') {
+      body = Readable.fromWeb(raw.transformToWebStream() as import('stream/web').ReadableStream);
+    } else if (typeof raw.transformToByteArray === 'function') {
+      body = Readable.from(Buffer.from(await raw.transformToByteArray()));
+    } else {
+      throw new Error('Неподдерживаемый тип потока S3');
+    }
+
+    return {
+      body,
+      contentType: result.ContentType,
+      contentLength: result.ContentLength,
     };
   }
 

@@ -7,6 +7,7 @@ import {
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import { AppModule } from './app.module';
 
 // Prisma BigInt (e.g. MediaAsset.fileSizeBytes) must be JSON-serializable
@@ -17,11 +18,14 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: true }),
+    new FastifyAdapter({ logger: true, bodyLimit: 210 * 1024 * 1024 }),
   );
 
   await app.register(cookie as never, {
     secret: process.env.SESSION_SECRET ?? 'local-dev-session-secret-min-16',
+  });
+  await app.register(multipart as never, {
+    limits: { fileSize: 200 * 1024 * 1024 },
   });
 
   app.setGlobalPrefix('api/v1');

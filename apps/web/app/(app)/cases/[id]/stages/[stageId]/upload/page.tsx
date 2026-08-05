@@ -427,7 +427,7 @@ export default function StageUploadPage() {
           size: file.size,
         });
 
-        await uploadApi.uploadFile(presign, file, (pct) => {
+        await uploadApi.uploadFile(batchId, presign, file, (pct) => {
           const overall = Math.round(((done + pct / 100) / entries.length) * 100);
           setProgress(overall);
         });

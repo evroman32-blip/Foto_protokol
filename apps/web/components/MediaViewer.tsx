@@ -65,20 +65,6 @@ function assetBaseName(asset: MediaAssetDto) {
   return name.replace(/^\d+\.\s*/, '');
 }
 
-function needsBlobProxy(view: MediaViewUrlDto, asset: MediaAssetDto) {
-  if (isObjScan(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName)) {
-    return false;
-  }
-  if (isStl(view.mimeType, view.mediaType, view.originalFileName ?? asset.originalFileName)) {
-    return false;
-  }
-  return (
-    isImage(view.mimeType, view.mediaType) ||
-    isVideo(view.mimeType, view.mediaType) ||
-    isPdf(view.mimeType, view.mediaType)
-  );
-}
-
 export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaViewerProps) {
   const [index, setIndex] = useState(initialIndex);
   const [view, setView] = useState<MediaViewUrlDto | null>(null);
@@ -109,18 +95,36 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
         if (cancelled) return;
         setView(data);
 
-        if (needsBlobProxy(data, asset)) {
-          // Signed MinIO URL через /storage или :9000 часто даёт 403 — грузим через API с Bearer
-          const buffer = await mediaApi.fetchContent(asset.id);
-          if (cancelled) return;
-          const blob = new Blob([buffer], {
-            type: data.mimeType || 'application/octet-stream',
-          });
-          objectUrl = URL.createObjectURL(blob);
-          setDisplayUrl(objectUrl);
-        } else {
-          setDisplayUrl(data.url);
+        const fileName = data.originalFileName ?? asset.originalFileName;
+        // Фото/видео/PDF: браузер грузит сам по same-origin URL (cookie + стрим API).
+        // Это быстрее, чем скачивать весь файл в JS через fetch+blob.
+        if (
+          isImage(data.mimeType, data.mediaType) ||
+          isVideo(data.mimeType, data.mediaType) ||
+          isPdf(data.mimeType, data.mediaType)
+        ) {
+          const path =
+            isImage(data.mimeType, data.mediaType)
+              ? data.previewPath ?? `/api/v1/media/${asset.id}/content?variant=preview`
+              : data.contentPath ?? `/api/v1/media/${asset.id}/content`;
+          setDisplayUrl(path);
+          return;
         }
+
+        // 3D: по-прежнему через fetchContent внутри Stl/Obj viewer
+        if (isStl(data.mimeType, data.mediaType, fileName) || isObjScan(data.mimeType, data.mediaType, fileName)) {
+          setDisplayUrl(data.url);
+          return;
+        }
+
+        // Прочий тип — blob через API
+        const buffer = await mediaApi.fetchContent(asset.id);
+        if (cancelled) return;
+        const blob = new Blob([buffer], {
+          type: data.mimeType || 'application/octet-stream',
+        });
+        objectUrl = URL.createObjectURL(blob);
+        setDisplayUrl(objectUrl);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Не удалось открыть файл');
@@ -152,6 +156,7 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
   const mime = view?.mimeType;
   const mediaType = view?.mediaType ?? asset.mediaType;
   const src = displayUrl;
+  const fullContentSrc = view?.contentPath ?? `/api/v1/media/${asset.id}/content`;
 
   return (
     <div
@@ -175,6 +180,7 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
               {typeLabel}
               {asset.requirementCode ? ` · ${asset.requirementCode}` : ''}
               {` · ${index + 1} / ${assets.length} (порядок протокола)`}
+              {view?.hasPreview ? ' · превью' : ''}
             </div>
           </div>
           <button type="button" className="btn-secondary !px-3 !py-1 text-sm" onClick={onClose}>
@@ -192,7 +198,17 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
               <StlViewer mediaId={asset.id} fallbackUrl={view.url} className="w-full" />
             ) : isImage(mime, mediaType) ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={src} alt={title} className="max-h-[70vh] max-w-full object-contain" />
+              <img
+                src={src}
+                alt={title}
+                className="max-h-[70vh] max-w-full object-contain"
+                onError={(e) => {
+                  // нет превью → оригинал
+                  if (e.currentTarget.src.includes('variant=preview')) {
+                    e.currentTarget.src = fullContentSrc;
+                  }
+                }}
+              />
             ) : isVideo(mime, mediaType) ? (
               <video src={src} controls className="max-h-[70vh] max-w-full" />
             ) : isPdf(mime, mediaType) ? (
@@ -200,7 +216,7 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
             ) : (
               <div className="space-y-3 text-center text-sm">
                 <p>Предпросмотр для этого типа файла недоступен.</p>
-                <a href={src} target="_blank" rel="noreferrer" className="btn-primary inline-flex">
+                <a href={fullContentSrc} target="_blank" rel="noreferrer" className="btn-primary inline-flex">
                   Скачать: {title}
                 </a>
               </div>
@@ -217,14 +233,14 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
           >
             ← Предыдущий
           </button>
-          {src ? (
+          {fullContentSrc ? (
             <a
-              href={src}
+              href={fullContentSrc}
               target="_blank"
               rel="noreferrer"
               className="text-sm text-accent underline-offset-2 hover:underline"
             >
-              Открыть в новой вкладке
+              Открыть оригинал
             </a>
           ) : (
             <span />

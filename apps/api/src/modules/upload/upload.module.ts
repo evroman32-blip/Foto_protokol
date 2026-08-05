@@ -6,10 +6,12 @@ import {
   Param,
   Post,
   Module,
+  Req,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { createHash } from 'crypto';
+import type { FastifyRequest } from 'fastify';
 import { PrismaService } from '../../common/services/prisma.service';
 import { S3StorageService } from '../storage/s3-storage.service';
 import { QueueService, QUEUE_NAMES } from '../queue/queue.service';
@@ -17,6 +19,23 @@ import { AuditAction } from '../../common/decorators/metadata.decorators';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { StorageModule } from '../storage/storage.module';
 import { QueueModule } from '../queue/queue.module';
+
+type MultipartRequest = FastifyRequest & {
+  file: () => Promise<{
+    toBuffer: () => Promise<Buffer>;
+    filename: string;
+    mimetype: string;
+    fields: Record<string, unknown>;
+  } | undefined>;
+};
+
+function fieldValue(fields: Record<string, unknown>, name: string): string | undefined {
+  const raw = fields[name];
+  const item = Array.isArray(raw) ? raw[0] : raw;
+  if (!item || typeof item !== 'object') return undefined;
+  const value = (item as { value?: unknown }).value;
+  return typeof value === 'string' ? value : undefined;
+}
 
 class CreateBatchBody {
   @IsOptional()
@@ -194,6 +213,39 @@ export class UploadController {
   @AuditAction('upload.presign')
   async legacyPresign(@Param('batchId') batchId: string, @Body() dto: InitFileBody) {
     return this.initFile(batchId, dto);
+  }
+
+  /**
+   * Загрузка файла через API → MinIO (внутренняя сеть).
+   * Обходит браузерный PUT на signed URL (на демо ломается SignatureDoesNotMatch / CORS).
+   */
+  @Post('upload-batches/:batchId/files/put')
+  @AuditAction('upload.put')
+  async putFile(@Param('batchId') batchId: string, @Req() req: MultipartRequest) {
+    const batch = await this.prisma.uploadBatch.findUniqueOrThrow({ where: { id: batchId } });
+    const part = await req.file();
+    if (!part) throw new BadRequestException('Файл не передан');
+
+    const buffer = await part.toBuffer();
+    const objectKey =
+      fieldValue(part.fields, 'objectKey') ||
+      this.storage.buildObjectKey(`originals/${batch.stageInstanceId}`, part.filename || 'file.bin');
+    const mimeType =
+      fieldValue(part.fields, 'mimeType') || part.mimetype || 'application/octet-stream';
+
+    await this.storage.putObject(objectKey, buffer, mimeType);
+    return {
+      ok: true,
+      objectKey,
+      fileSizeBytes: buffer.length,
+      mimeType,
+    };
+  }
+
+  @Post('upload/batches/:batchId/files/put')
+  @AuditAction('upload.put')
+  putFileLegacy(@Param('batchId') batchId: string, @Req() req: MultipartRequest) {
+    return this.putFile(batchId, req);
   }
 
   @Post('upload-batches/:batchId/files/complete')

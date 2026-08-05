@@ -8,10 +8,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   StreamableFile,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import type { FastifyReply } from 'fastify';
 import { AssignmentSource, AssignmentStatus } from '@mandarin/contracts';
 import { isMediaRequirementEffectivelyRequired } from '@mandarin/domain';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -85,9 +87,17 @@ export class MediaController {
       primary?.requirementCode ??
       asset.originalFileName;
     const url = await this.storage.getPresignedDownloadUrl(asset.storedObjectKey);
+    const preview = await this.prisma.mediaDerivative.findFirst({
+      where: { mediaAssetId: id, type: 'PREVIEW' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
     return {
       id: asset.id,
       url,
+      /** Same-origin: браузер грузит со cookie (без signed MinIO и без blob в JS) */
+      contentPath: `/api/v1/media/${asset.id}/content`,
+      previewPath: `/api/v1/media/${asset.id}/content?variant=preview`,
       mimeType: asset.mimeType,
       mediaType: asset.mediaType,
       originalFileName: asset.originalFileName,
@@ -96,32 +106,54 @@ export class MediaController {
       requirementCode:
         primary?.requirementCode ?? primary?.requirementInstance?.mediaRequirement?.code ?? null,
       fileSizeBytes: Number(asset.fileSizeBytes),
+      hasPreview: Boolean(preview),
     };
   }
 
-  /** Поток файла через API (для 3D STL без CORS к MinIO/S3) */
+  /** Поток файла через API (preview/original). Стрим из MinIO + Cache-Control. */
   @Get(':id/content')
   @AuditAction('media.content')
-  async content(@Param('id') id: string) {
+  async content(
+    @Param('id') id: string,
+    @Query('variant') variant: string | undefined,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
     const asset = await this.prisma.mediaAsset.findUnique({
       where: { id },
     });
     if (!asset || asset.archivedAt) {
       throw new NotFoundException('Файл не найден');
     }
-    const { body, contentType } = await this.storage.getObjectBuffer(asset.storedObjectKey);
+
+    let objectKey = asset.storedObjectKey;
+    let mimeHint = asset.mimeType;
+    const wantPreview = variant === 'preview' || variant === 'thumbnail';
+    if (wantPreview) {
+      const derType = variant === 'thumbnail' ? 'THUMBNAIL' : 'PREVIEW';
+      const der = await this.prisma.mediaDerivative.findFirst({
+        where: { mediaAssetId: id, type: derType },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (der) {
+        objectKey = der.objectKey;
+        mimeHint = der.mimeType;
+      }
+    }
+
+    const { body, contentType, contentLength } = await this.storage.getObjectStream(objectKey);
     const mime =
       contentType ||
-      asset.mimeType ||
+      mimeHint ||
       (asset.mediaType === 'STL' ? 'model/stl' : 'application/octet-stream');
-    // RFC 5987: кириллица в filename ломает заголовок (ERR_INVALID_CHAR)
     const rawName = (asset.originalFileName || 'file').replace(/["\r\n]/g, '');
     const asciiName = rawName.replace(/[^\x20-\x7E]/g, '_') || 'file';
     const encoded = encodeURIComponent(rawName);
+
+    res.header('Cache-Control', 'private, max-age=86400');
     return new StreamableFile(body, {
       type: mime,
       disposition: `inline; filename="${asciiName}"; filename*=UTF-8''${encoded}`,
-      length: body.length,
+      ...(contentLength != null ? { length: contentLength } : {}),
     });
   }
 
