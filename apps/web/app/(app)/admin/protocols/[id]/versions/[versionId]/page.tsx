@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/States';
@@ -266,6 +266,68 @@ export default function ProtocolVersionPage() {
     setMessage(null);
   }
 
+  async function addNewStage() {
+    if (!versionId) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const usedCodes = new Set(templates.map((t) => t.code.toUpperCase()));
+      let n = templates.length + 1;
+      let code = `NEW_STAGE_${n}`;
+      while (usedCodes.has(code)) {
+        n += 1;
+        code = `NEW_STAGE_${n}`;
+      }
+      const nextOrder = Math.max(0, ...templates.map((t) => t.sortOrder), 0) + 1;
+      const created = await adminApi.createStageTemplate({
+        protocolVersionId: versionId,
+        name: 'Новый этап',
+        code,
+        sortOrder: nextOrder,
+        ownerRole: 'ORTHOPEDIST',
+      });
+      const refreshed = await load({ silent: true });
+      const stage = refreshed?.stageTemplates?.find((t) => t.id === created.id);
+      if (stage) {
+        setActiveStageId(stage.id);
+        hydrateStage(stage);
+      }
+      setMessage('Этап создан. Заполните название, положения и нажмите «Сохранить».');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось создать этап');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteStage(template: StageTemplateAdminDto, e: MouseEvent) {
+    e.stopPropagation();
+    if (
+      !window.confirm(
+        `Удалить этап «${template.name}» (${template.code}) из протокола?\nПоложения этапа тоже будут удалены. Если в случаях уже есть файлы по этапу — удаление будет отклонено.`,
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await adminApi.deleteStageTemplate(template.id);
+      if (activeStageId === template.id) {
+        setActiveStageId(null);
+        setEditingKey(null);
+      }
+      await load({ silent: true });
+      setMessage(`Этап «${template.name}» удалён`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить этап');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const activeTemplate = templates.find((t) => t.id === activeStageId) ?? null;
   const existingItems = items.filter((i) => i.existingId);
   const newItems = items.filter((i) => !i.existingId);
@@ -396,9 +458,19 @@ export default function ProtocolVersionPage() {
         title={version?.protocolName ?? 'Протокол'}
         description={`Версия ${version?.version ?? ''} · статус ${version?.status ?? ''} · активные положения шаблона сразу видны в загрузке открытых случаев; закрытые случаи не меняются`}
         actions={
-          <Link href="/admin/protocols" className="btn-secondary">
-            К списку протоколов
-          </Link>
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <Link href="/admin/protocols" className="btn-secondary w-full text-center sm:w-auto">
+              К списку протоколов
+            </Link>
+            <button
+              type="button"
+              className="btn-primary w-full sm:w-auto"
+              disabled={saving}
+              onClick={() => void addNewStage()}
+            >
+              Добавить новый этап
+            </button>
+          </div>
         }
       />
 
@@ -415,21 +487,37 @@ export default function ProtocolVersionPage() {
 
           return (
             <div key={template.id} className="card space-y-4">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between text-left"
-                onClick={() => openStage(template)}
-              >
-                <div>
+              <div className="flex w-full items-center justify-between gap-3 text-left">
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => openStage(template)}
+                >
                   <div className="font-medium">
                     {template.sortOrder}. {template.name}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
                     {template.code} · положений: {activeCount}
                   </div>
+                </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    className="text-sm text-accent underline-offset-2 hover:underline"
+                    onClick={() => openStage(template)}
+                  >
+                    {open ? 'Свернуть' : 'Настроить этап'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary !px-2 !py-1 text-xs text-status-danger"
+                    disabled={saving}
+                    onClick={(e) => void deleteStage(template, e)}
+                  >
+                    Удалить
+                  </button>
                 </div>
-                <span className="text-sm text-accent">{open ? 'Свернуть' : 'Настроить этап'}</span>
-              </button>
+              </div>
 
               {open && activeTemplate?.id === template.id ? (
                 <div className="space-y-5 border-t border-border pt-4">

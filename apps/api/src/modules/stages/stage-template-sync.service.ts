@@ -161,6 +161,26 @@ export class StageTemplateSyncService {
     }
   }
 
+  /** Добавить StageInstance нового шаблона во все незакрытые случаи версии протокола. */
+  async backfillStageTemplateAcrossOpenCases(stageTemplateId: string): Promise<void> {
+    const template = await this.prisma.stageTemplate.findUnique({
+      where: { id: stageTemplateId },
+      select: { id: true, protocolVersionId: true, isActive: true },
+    });
+    if (!template?.isActive) return;
+
+    const cases = await this.prisma.clinicalCase.findMany({
+      where: {
+        protocolVersionId: template.protocolVersionId,
+        status: { notIn: FROZEN_CASE_STATUSES },
+      },
+      select: { id: true },
+    });
+    for (const clinicalCase of cases) {
+      await this.ensureCaseAlignedWithTemplate(clinicalCase.id);
+    }
+  }
+
   /**
    * Уже загруженные ОПТГ/КТ по положениям шаблона регистрируем как RadiologyStudy,
    * чтобы экран рентгенологии и комплектность их видели.

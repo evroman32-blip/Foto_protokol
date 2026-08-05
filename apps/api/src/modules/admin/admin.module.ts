@@ -72,6 +72,38 @@ class UpdateStageTemplateDto {
   isActive?: boolean;
 }
 
+class CreateStageTemplateDto {
+  @IsUUID()
+  protocolVersionId!: string;
+
+  @IsString()
+  code!: string;
+
+  @IsString()
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsEnum(StageOwnerRole)
+  ownerRole?: StageOwnerRole;
+
+  @IsOptional()
+  @IsString()
+  dependsOnStageCode?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 class CreateMediaRequirementDto {
   @IsUUID()
   stageTemplateId!: string;
@@ -222,6 +254,132 @@ export class AdminController {
       },
       include: { mediaRequirements: { orderBy: { sortOrder: 'asc' } } },
     });
+  }
+
+  @Post('stage-templates')
+  @AuditAction('admin.stage-template.create')
+  async createStageTemplate(@Body() dto: CreateStageTemplateDto) {
+    const code = dto.code.trim().toUpperCase().replace(/\s+/g, '_');
+    const name = dto.name.trim();
+    if (!code) throw new BadRequestException('Укажите код этапа');
+    if (!name) throw new BadRequestException('Укажите название этапа');
+
+    await this.prisma.protocolVersion.findUniqueOrThrow({
+      where: { id: dto.protocolVersionId },
+    });
+
+    const existing = await this.prisma.stageTemplate.findUnique({
+      where: {
+        protocolVersionId_code: {
+          protocolVersionId: dto.protocolVersionId,
+          code,
+        },
+      },
+    });
+    if (existing) {
+      throw new BadRequestException(`Этап с кодом ${code} уже есть в этой версии протокола`);
+    }
+
+    const maxSort = await this.prisma.stageTemplate.aggregate({
+      where: { protocolVersionId: dto.protocolVersionId },
+      _max: { sortOrder: true },
+    });
+
+    const created = await this.prisma.stageTemplate.create({
+      data: {
+        protocolVersionId: dto.protocolVersionId,
+        code,
+        name,
+        description: dto.description?.trim() || null,
+        sortOrder: dto.sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
+        ownerRole: dto.ownerRole ?? StageOwnerRole.ORTHOPEDIST,
+        dependsOnStageCode: dto.dependsOnStageCode?.trim() || null,
+        isActive: dto.isActive ?? true,
+      },
+      include: { mediaRequirements: { orderBy: { sortOrder: 'asc' } } },
+    });
+
+    if (created.isActive) {
+      await this.templateSync.backfillStageTemplateAcrossOpenCases(created.id);
+    }
+
+    return created;
+  }
+
+  @Delete('stage-templates/:id')
+  @AuditAction('admin.stage-template.delete')
+  async deleteStageTemplate(@Param('id') id: string) {
+    const template = await this.prisma.stageTemplate.findUniqueOrThrow({
+      where: { id },
+      include: {
+        mediaRequirements: { select: { id: true } },
+        stageInstances: {
+          select: {
+            id: true,
+            mediaAssets: {
+              where: { archivedAt: null },
+              select: { id: true },
+              take: 1,
+            },
+          },
+        },
+      },
+    });
+
+    const hasMedia = template.stageInstances.some((s) => s.mediaAssets.length > 0);
+    if (hasMedia) {
+      throw new BadRequestException(
+        'Нельзя удалить этап: в случаях уже есть загруженные файлы по этому этапу',
+      );
+    }
+
+    const stageIds = template.stageInstances.map((s) => s.id);
+    const requirementIds = template.mediaRequirements.map((r) => r.id);
+
+    // У пустых инстансов этапа снимаем положения и сами инстансы (без медиа).
+    if (stageIds.length) {
+      const riIds = (
+        await this.prisma.requirementInstance.findMany({
+          where: { stageInstanceId: { in: stageIds } },
+          select: { id: true },
+        })
+      ).map((r) => r.id);
+      if (riIds.length) {
+        await this.prisma.mediaAssignment.updateMany({
+          where: { requirementInstanceId: { in: riIds } },
+          data: { requirementInstanceId: null },
+        });
+        await this.prisma.requirementInstance.deleteMany({
+          where: { id: { in: riIds } },
+        });
+      }
+      await this.prisma.uploadBatch.deleteMany({ where: { stageInstanceId: { in: stageIds } } });
+      await this.prisma.stageInstance.deleteMany({ where: { id: { in: stageIds } } });
+    }
+
+    if (requirementIds.length) {
+      const leftoverRi = (
+        await this.prisma.requirementInstance.findMany({
+          where: { mediaRequirementId: { in: requirementIds } },
+          select: { id: true },
+        })
+      ).map((r) => r.id);
+      if (leftoverRi.length) {
+        await this.prisma.mediaAssignment.updateMany({
+          where: { requirementInstanceId: { in: leftoverRi } },
+          data: { requirementInstanceId: null },
+        });
+        await this.prisma.requirementInstance.deleteMany({
+          where: { id: { in: leftoverRi } },
+        });
+      }
+      await this.prisma.mediaRequirement.deleteMany({
+        where: { id: { in: requirementIds } },
+      });
+    }
+
+    await this.prisma.stageTemplate.delete({ where: { id } });
+    return { ok: true };
   }
 
   @Post('media-requirements')

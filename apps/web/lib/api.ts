@@ -246,6 +246,24 @@ export const adminApi = {
       method: 'PATCH',
       body: data,
     }),
+  createStageTemplate: (data: {
+    protocolVersionId: string;
+    code: string;
+    name: string;
+    description?: string;
+    sortOrder?: number;
+    ownerRole?: string;
+    dependsOnStageCode?: string | null;
+    isActive?: boolean;
+  }) =>
+    request<StageTemplateAdminDto>('/api/v1/admin/stage-templates', {
+      method: 'POST',
+      body: data,
+    }),
+  deleteStageTemplate: (id: string) =>
+    request<{ ok: boolean }>(`/api/v1/admin/stage-templates/${id}`, {
+      method: 'DELETE',
+    }),
   createMediaRequirement: (data: {
     stageTemplateId: string;
     code: string;
