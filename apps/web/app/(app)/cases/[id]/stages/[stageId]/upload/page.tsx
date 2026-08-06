@@ -611,9 +611,6 @@ export default function StageUploadPage() {
                   <div className="mt-1 text-xs text-gray-500">
                     {mediaTypeLabel(req.mediaType)} · код {req.code}
                   </div>
-                  {req.instruction ? (
-                    <div className="mt-1 text-xs text-gray-500">{req.instruction}</div>
-                  ) : null}
                 </div>
                 <div className="text-right text-xs">
                   {inactiveHint ? (
@@ -629,6 +626,17 @@ export default function StageUploadPage() {
                   </div>
                 </div>
               </div>
+
+              {req.instruction?.trim() ? (
+                <div className="rounded border border-border bg-surface-muted/50 px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    Инструкция
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-snug text-graphite">
+                    {req.instruction.trim()}
+                  </p>
+                </div>
+              ) : null}
 
               {req.specialRule === 'desiredToothShade' ||
               req.code === 'JR_DESIRED_TOOTH_FORM_FRONT' ? (

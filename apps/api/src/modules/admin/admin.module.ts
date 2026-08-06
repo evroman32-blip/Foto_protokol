@@ -388,8 +388,28 @@ export class AdminController {
     const stage = await this.prisma.stageTemplate.findUniqueOrThrow({
       where: { id: dto.stageTemplateId },
     });
-    const code = dto.code.trim().toUpperCase().replace(/\s+/g, '_');
+    let code = dto.code.trim().toUpperCase().replace(/\s+/g, '_');
     if (!code) throw new BadRequestException('Укажите код требования');
+
+    // Авто-уникализация кода: длинные похожие названия раньше обрезались и конфликтовали
+    const existingCodes = new Set(
+      (
+        await this.prisma.mediaRequirement.findMany({
+          where: { stageTemplateId: stage.id },
+          select: { code: true },
+        })
+      ).map((r) => r.code.toUpperCase()),
+    );
+    if (existingCodes.has(code)) {
+      let n = 2;
+      const base = code.slice(0, 90);
+      let candidate = `${base}_${n}`;
+      while (existingCodes.has(candidate)) {
+        n += 1;
+        candidate = `${base}_${n}`;
+      }
+      code = candidate;
+    }
 
     const created = await this.prisma.mediaRequirement.create({
       data: {

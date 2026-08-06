@@ -26,6 +26,7 @@ type LocalRequirement = {
   existingId?: string;
   code: string;
   name: string;
+  instruction: string;
   mediaType: string;
   minCount: number;
   sortOrder: number;
@@ -39,6 +40,7 @@ function emptyLocal(sortOrder = 1): LocalRequirement {
     key: `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     code: '',
     name: '',
+    instruction: '',
     mediaType: 'PHOTO',
     minCount: 1,
     sortOrder,
@@ -54,6 +56,7 @@ function fromServer(req: MediaRequirementAdminDto): LocalRequirement {
     existingId: req.id,
     code: req.code,
     name: req.name,
+    instruction: req.instruction ?? '',
     mediaType: req.mediaType,
     minCount: req.minCount,
     sortOrder: req.sortOrder,
@@ -103,7 +106,23 @@ function slugifyCode(name: string) {
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_|_$/g, '')
     .toUpperCase()
-    .slice(0, 64);
+    .slice(0, 96);
+}
+
+/** Уникальный код среди уже занятых (защита от коллизий длинных названий). */
+function ensureUniqueCode(raw: string, used: Set<string>, fallbackPrefix = 'REQ') {
+  let base = (raw || fallbackPrefix).toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, '');
+  if (!base) base = fallbackPrefix;
+  base = base.slice(0, 96);
+  if (!used.has(base)) return base;
+  // хвост хеша от полного raw, чтобы длинные похожие названия не сталкивались
+  let n = 2;
+  let candidate = `${base.slice(0, 90)}_${n}`;
+  while (used.has(candidate)) {
+    n += 1;
+    candidate = `${base.slice(0, 90)}_${n}`;
+  }
+  return candidate;
 }
 
 function RequirementFields({
@@ -115,24 +134,72 @@ function RequirementFields({
   onChange: (patch: Partial<LocalRequirement>) => void;
   codeEditable: boolean;
 }) {
+  const instruction = value.instruction ?? '';
+
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <div className="sm:col-span-2">
-        <label className="label-field">Название положения</label>
-        <input
-          className="input-field"
-          value={value.name}
-          placeholder="Анфас в покое"
-          onChange={(e) => {
-            const name = e.target.value;
-            onChange({
-              name,
-              dirty: true,
-              code: codeEditable && !value.code ? slugifyCode(name) : value.code,
-            });
-          }}
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="sm:col-span-2">
+          <label className="label-field">Название положения</label>
+          <input
+            className="input-field"
+            value={value.name}
+            placeholder="Анфас в покое"
+            onChange={(e) => {
+              const name = e.target.value;
+              onChange({
+                name,
+                dirty: true,
+                code: codeEditable ? slugifyCode(name) : value.code,
+              });
+            }}
+          />
+        </div>
+        <div>
+          <label className="label-field">Тип</label>
+          <select
+            className="input-field"
+            value={value.mediaType}
+            onChange={(e) => onChange({ mediaType: e.target.value, dirty: true })}
+          >
+            {MEDIA_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label-field">Мин. кол-во</label>
+          <input
+            type="number"
+            min={0}
+            className="input-field"
+            value={value.minCount}
+            onChange={(e) => onChange({ minCount: Number(e.target.value), dirty: true })}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="label-field" htmlFor={`req-instruction-${value.key}`}>
+          Описание положения
+        </label>
+        <textarea
+          id={`req-instruction-${value.key}`}
+          className="input-field min-h-[100px] w-full resize-y"
+          value={instruction}
+          placeholder="Инструкция для врача при загрузке: ракурс, свет, положение губ, шаблоны…"
+          rows={4}
+          onChange={(e) => onChange({ instruction: e.target.value, dirty: true })}
         />
-        <div className="mt-2">
+        <p className="mt-1 text-xs text-gray-500">
+          Этот текст отображается в окне загрузки медиа как инструкция к положению.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div>
           <label className="label-field">Код</label>
           <input
             className="input-field font-mono text-xs"
@@ -147,57 +214,33 @@ function RequirementFields({
             }
           />
         </div>
-      </div>
-      <div>
-        <label className="label-field">Тип</label>
-        <select
-          className="input-field"
-          value={value.mediaType}
-          onChange={(e) => onChange({ mediaType: e.target.value, dirty: true })}
-        >
-          {MEDIA_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="label-field">Мин. кол-во</label>
-        <input
-          type="number"
-          min={0}
-          className="input-field"
-          value={value.minCount}
-          onChange={(e) => onChange({ minCount: Number(e.target.value), dirty: true })}
-        />
-      </div>
-      <div>
-        <label className="label-field">Порядок</label>
-        <input
-          type="number"
-          className="input-field"
-          value={value.sortOrder}
-          onChange={(e) => onChange({ sortOrder: Number(e.target.value), dirty: true })}
-        />
-      </div>
-      <div className="flex items-end gap-4">
-        <label className="flex items-center gap-2 text-sm">
+        <div>
+          <label className="label-field">Порядок</label>
           <input
-            type="checkbox"
-            checked={value.required}
-            onChange={(e) => onChange({ required: e.target.checked, dirty: true })}
+            type="number"
+            className="input-field"
+            value={value.sortOrder}
+            onChange={(e) => onChange({ sortOrder: Number(e.target.value), dirty: true })}
           />
-          Обязательно
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={value.isActive}
-            onChange={(e) => onChange({ isActive: e.target.checked, dirty: true })}
-          />
-          Активно
-        </label>
+        </div>
+        <div className="flex items-end gap-4 sm:col-span-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={value.required}
+              onChange={(e) => onChange({ required: e.target.checked, dirty: true })}
+            />
+            Обязательно
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={value.isActive}
+              onChange={(e) => onChange({ isActive: e.target.checked, dirty: true })}
+            />
+            Активно
+          </label>
+        </div>
       </div>
     </div>
   );
@@ -339,6 +382,10 @@ export default function ProtocolVersionPage() {
   function addItem() {
     const nextOrder = Math.max(0, ...items.map((i) => i.sortOrder)) + 1;
     const draft = emptyLocal(nextOrder);
+    const used = new Set(
+      items.map((i) => (i.code || '').toUpperCase()).filter(Boolean),
+    );
+    draft.code = ensureUniqueCode(`POS_${nextOrder}`, used, 'POS');
     setItems((prev) => [...prev, draft]);
     setEditingKey(draft.key);
     setShowList(true);
@@ -384,12 +431,20 @@ export default function ProtocolVersionPage() {
   async function saveAll() {
     if (!activeTemplate) return;
 
+    const usedCodes = new Set<string>();
+    for (const i of existingItems) {
+      const c = i.code.trim().toUpperCase().replace(/\s+/g, '_');
+      if (c) usedCodes.add(c);
+    }
+
     const toCreate = newItems
-      .map((i) => ({
-        ...i,
-        name: i.name.trim(),
-        code: (i.code.trim() || slugifyCode(i.name)).toUpperCase().replace(/\s+/g, '_'),
-      }))
+      .map((i) => {
+        const name = i.name.trim();
+        const rawCode = (i.code.trim() || slugifyCode(name)).toUpperCase().replace(/\s+/g, '_');
+        const code = ensureUniqueCode(rawCode || slugifyCode(name) || `POS_${i.sortOrder}`, usedCodes);
+        usedCodes.add(code);
+        return { ...i, name, code };
+      })
       .filter((i) => i.name || i.code);
 
     for (const i of toCreate) {
@@ -421,6 +476,7 @@ export default function ProtocolVersionPage() {
           sortOrder: item.sortOrder,
           required: item.required,
           isActive: item.isActive,
+          instruction: item.instruction.trim() || null,
         });
       }
 
@@ -433,6 +489,7 @@ export default function ProtocolVersionPage() {
           minCount: item.minCount,
           sortOrder: item.sortOrder,
           required: item.required,
+          instruction: item.instruction.trim() || undefined,
         });
       }
 
