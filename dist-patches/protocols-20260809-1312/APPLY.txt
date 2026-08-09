@@ -1,0 +1,26 @@
+﻿Mandarin PhotoProtocol вЂ” РїР°С‚С‡: СЃРїСЂР°РІРѕС‡РЅРёРє РїСЂРѕС‚РѕРєРѕР»РѕРІ (СЃРѕР·РґР°РЅРёРµ / СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ)
+
+Р§С‚Рѕ РїРѕСЏРІРёР»РѕСЃСЊ
+  - С„РѕСЂРјР° В«РќРѕРІС‹Р№ РїСЂРѕС‚РѕРєРѕР»В» (РЅР°Р·РІР°РЅРёРµ, РєРѕРґ, РІРµСЂСЃРёСЏ, РѕРїРёСЃР°РЅРёРµ, РѕРїСѓР±Р»РёРєРѕРІР°С‚СЊ СЃСЂР°Р·Сѓ)
+  - СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ РїСЂРѕС‚РѕРєРѕР»Р° РІ С‚Р°Р±Р»РёС†Рµ (РЅР°Р·РІР°РЅРёРµ, РєРѕРґ, РѕРїРёСЃР°РЅРёРµ, Р°РєС‚РёРІРЅРѕСЃС‚СЊ)
+  - СЃРјРµРЅР° СЃС‚Р°С‚СѓСЃР° РІРµСЂСЃРёРё: DRAFT / PUBLISHED / ARCHIVED
+  - СЃСЃС‹Р»РєР° В«РќР°СЃС‚СЂРѕРёС‚СЊ С€Р°Р±Р»РѕРЅС‹В» РєР°Рє СЂР°РЅСЊС€Рµ (СЌС‚Р°РїС‹ Рё РїРѕР»РѕР¶РµРЅРёСЏ)
+
+Р¤Р°Р№Р»С‹ (РїСѓС‚Рё РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅРѕ /opt/mandarin-pp):
+  - apps\api\src\modules\admin\admin.module.ts
+  - apps\web\lib\api.ts
+  - apps\web\app\(app)\admin\protocols\page.tsx
+
+=== Windows в†’ СЃРµСЂРІРµСЂ ===
+
+scp "C:\Рабочая\ИИ для бизнеса\Вайб-кодинг\Cursor\Фотопротокол\Foto_protokol\dist-patches\mandarin-patch-protocols-20260809-1312.zip" root@176.98.177.79:/root/
+
+=== РќР° СЃРµСЂРІРµСЂРµ ===
+
+cd /opt/mandarin-pp
+unzip -o /root/mandarin-patch-protocols-20260809-1312.zip -d /tmp/mandarin-patch-protocols
+cp -a /tmp/mandarin-patch-protocols/apps/. ./apps/
+
+docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --build api web
+
+Р—Р°С‚РµРј РІ Р±СЂР°СѓР·РµСЂРµ Ctrl+F5 в†’ РђРґРјРёРЅРёСЃС‚СЂРёСЂРѕРІР°РЅРёРµ в†’ РџСЂРѕС‚РѕРєРѕР»С‹.
