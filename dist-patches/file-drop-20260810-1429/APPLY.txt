@@ -1,0 +1,26 @@
+﻿Mandarin PhotoProtocol вЂ” РїР°С‚С‡: С„Р°Р№Р» РѕС‚РєСЂС‹РІР°РµС‚СЃСЏ РІРѕ РІРєР»Р°РґРєРµ РІРјРµСЃС‚Рѕ Р·Р°РіСЂСѓР·РєРё
+
+РџСЂРёС‡РёРЅР°
+  РџСЂРё РїРµСЂРµС‚Р°СЃРєРёРІР°РЅРёРё JPG/РІРёРґРµРѕ РЅР° РѕР±Р»Р°СЃС‚СЊ СЃС‚СЂР°РЅРёС†С‹ Chrome РѕС‚РєСЂС‹РІР°РµС‚ file:// РІРѕ РІРєР»Р°РґРєРµ,
+  РµСЃР»Рё РЅРµС‚ preventDefault РЅР° dragover/drop. РќР° РєР°СЂС‚РѕС‡РєР°С… Р·СѓР±РѕРІ drop РЅРµ РѕР±СЂР°Р±Р°С‚С‹РІР°Р»СЃСЏ.
+
+РСЃРїСЂР°РІР»РµРЅРёРµ
+  - РіР»РѕР±Р°Р»СЊРЅС‹Р№ guard РЅР° СЌРєСЂР°РЅРµ Р·Р°РіСЂСѓР·РєРё
+  - drop РЅР° РѕРєРЅРѕ Р·СѓР±Р° в†’ Р·Р°РіСЂСѓР·РєР° JPG СЃСЂРµР·Р°
+  - drop РЅР° РєР°СЂС‚РѕС‡РєСѓ РїРѕР»РѕР¶РµРЅРёСЏ в†’ РІС‹Р±РѕСЂ С„Р°Р№Р»РѕРІ Рє СЃРѕС…СЂР°РЅРµРЅРёСЋ
+
+Р¤Р°Р№Р»С‹:
+  - apps\web\lib\prevent-file-navigation.ts
+  - apps\web\components\ImplantSliceCardsForm.tsx
+  - apps\web\app\(app)\cases\[id]\stages\[stageId]\upload\page.tsx
+
+=== Windows ===
+scp "C:\Рабочая\ИИ для бизнеса\Вайб-кодинг\Cursor\Фотопротокол\Foto_protokol\dist-patches\mandarin-patch-file-drop-20260810-1429.zip" root@176.98.177.79:/root/
+
+=== РЎРµСЂРІРµСЂ ===
+cd /opt/mandarin-pp
+unzip -o /root/mandarin-patch-file-drop-20260810-1429.zip -d /tmp/mandarin-patch-file-drop
+cp -a /tmp/mandarin-patch-file-drop/apps/. ./apps/
+docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --build web
+
+Ctrl+F5 РІ Р±СЂР°СѓР·РµСЂРµ.
