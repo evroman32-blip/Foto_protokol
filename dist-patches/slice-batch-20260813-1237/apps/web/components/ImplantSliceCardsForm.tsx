@@ -106,12 +106,10 @@ export const ImplantSliceCardsForm = forwardRef<
     onChanged?: () => void;
     /** Сохранение запускает родительская кнопка «Сохранить выбранные». */
     externalSaveControl?: boolean;
-    /** Этап закрыт: только просмотр. */
-    readOnly?: boolean;
     onPendingChange?: (count: number) => void;
   }
 >(function ImplantSliceCardsForm(
-  { stageId, onChanged, externalSaveControl = false, readOnly = false, onPendingChange },
+  { stageId, onChanged, externalSaveControl = false, onPendingChange },
   ref,
 ) {
   const [implants, setImplants] = useState<SurgicalImplantDto[]>([]);
@@ -294,17 +292,15 @@ export const ImplantSliceCardsForm = forwardRef<
     return <p className="text-sm text-gray-500">Загрузка карточек имплантатов…</p>;
   }
 
-  const inputsDisabled = saving || readOnly;
+  const inputsDisabled = saving;
 
   return (
     <section className="card mb-6">
       <h2 className="mb-1 font-semibold text-graphite">3. Карточки срезов имплантатов</h2>
       <p className="mb-4 text-sm text-gray-600">
-        {readOnly
-          ? 'Этап закрыт: срезы доступны только для просмотра.'
-          : `Выберите челюсть и подгрузите JPG-срезы в окна зубов (кнопка «Выберите файл» или перетаскивание). Файлы сначала попадают в очередь, затем сохраняются все сразу${
-              externalSaveControl ? ' кнопкой «Сохранить выбранные» ниже' : ''
-            }. Пустые окна допустимы.`}
+        Выберите челюсть и подгрузите JPG-срезы в окна зубов (кнопка «Выберите файл» или
+        перетаскивание). Файлы сначала попадают в очередь, затем сохраняются все сразу
+        {externalSaveControl ? ' кнопкой «Сохранить выбранные» ниже' : ''}. Пустые окна допустимы.
       </p>
 
       {error ? <div className="alert-error mb-3">{error}</div> : null}
@@ -449,7 +445,7 @@ export const ImplantSliceCardsForm = forwardRef<
         </div>
       ) : null}
 
-      {!externalSaveControl && !readOnly ? (
+      {!externalSaveControl ? (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"

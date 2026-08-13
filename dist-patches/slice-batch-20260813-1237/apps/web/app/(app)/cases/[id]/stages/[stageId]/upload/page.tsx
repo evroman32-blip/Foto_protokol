@@ -33,7 +33,6 @@ import {
   SCAN_MAX_BYTES,
   suggestScanSlotCode,
 } from '@/lib/scan-bundle';
-import { useCurrentUser } from '@/lib/use-current-user';
 
 type MediaTab = 'photo' | 'video' | 'docs' | 'stl' | 'radiology' | 'checklist' | 'history';
 
@@ -149,7 +148,6 @@ export default function StageUploadPage() {
   const [slotStatus, setSlotStatus] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<MediaTab>(tabFromUrl && TAB_MEDIA_TYPES[tabFromUrl] !== undefined ? tabFromUrl : 'photo');
   const [stageCode, setStageCode] = useState<string | undefined>();
-  const [stageStatus, setStageStatus] = useState<string | undefined>();
   const [impressionCaptureMode, setImpressionCaptureMode] = useState<
     'SCAN' | 'IMPRESSION' | null
   >(null);
@@ -165,7 +163,6 @@ export default function StageUploadPage() {
   /** Очередь срезов имплантатов — сохраняется той же кнопкой, что и остальные положения. */
   const sliceFormRef = useRef<SliceCardsHandle>(null);
   const [slicePending, setSlicePending] = useState(0);
-  const { canEditClosedStage } = useCurrentUser();
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -173,7 +170,6 @@ export default function StageUploadPage() {
     try {
       const stage = await stagesApi.get(stageId);
       setStageCode(stage.stageTemplate.code);
-      setStageStatus(stage.status);
       setImpressionCaptureMode(stage.impressionCaptureMode ?? null);
       setDesiredToothShade(stage.desiredToothShade ?? '');
       const reqs = [...(stage.requirementInstances ?? [])]
@@ -212,9 +208,7 @@ export default function StageUploadPage() {
   useEffect(() => attachDocumentFileDropGuard(), []);
 
   const tabMediaTypes = TAB_MEDIA_TYPES[activeTab];
-  /** Закрытый этап правят только главный врач и админ. */
-  const stageLocked = stageStatus === 'CLOSED' && !canEditClosedStage;
-  const canUploadOnTab = tabMediaTypes != null && !stageLocked;
+  const canUploadOnTab = tabMediaTypes != null;
 
   /** Все активные положения шаблона в порядке протокола. */
   const protocolOrderedRequirements = useMemo(() => {
@@ -592,14 +586,6 @@ export default function StageUploadPage() {
       {error ? <div className="alert-error mb-4 mt-4">{error}</div> : null}
       {message ? <div className="mb-4 mt-4 text-sm text-status-success">{message}</div> : null}
 
-      {stageStatus === 'CLOSED' ? (
-        <div className="card mt-4 border-status-warning/40 text-sm text-graphite">
-          {stageLocked
-            ? 'Этап закрыт. Загрузка, замена и удаление файлов недоступны — изменить состав материалов могут только главный врач и администратор.'
-            : 'Этап закрыт. Правки состава файлов доступны вам как главному врачу или администратору; статус этапа при этом сохраняется.'}
-        </div>
-      ) : null}
-
       {activeTab === 'checklist' || activeTab === 'history' ? (
         <div className="card mt-4 text-sm text-gray-600">
           Для этой вкладки используйте соответствующие разделы этапа (чек-лист / история).
@@ -683,7 +669,7 @@ export default function StageUploadPage() {
               onDragOver={preventBrowserFileNavigation}
               onDrop={(e) => {
                 preventBrowserFileNavigation(e);
-                if (busy || stageLocked || req.mediaType === 'STL') return;
+                if (busy || req.mediaType === 'STL') return;
                 const list = e.dataTransfer.files;
                 if (!list?.length) return;
                 setFiles(ri.id, list, req.mediaType);
@@ -794,7 +780,7 @@ export default function StageUploadPage() {
                           <button
                             type="button"
                             className="text-accent underline-offset-2 hover:underline disabled:opacity-40"
-                            disabled={busy || stageLocked || !canDelete}
+                            disabled={busy || !canDelete}
                             title={
                               canDelete
                                 ? 'Удалить этот файл'
@@ -835,7 +821,7 @@ export default function StageUploadPage() {
                   type="file"
                   accept={ACCEPT_BY_TYPE[req.mediaType] ?? '*/*'}
                   className="input-field"
-                  disabled={busy || stageLocked}
+                  disabled={busy}
                   multiple={req.mediaType === 'STL' || multiSlot}
                   onChange={(e) => {
                     if (req.mediaType === 'STL') {
@@ -873,7 +859,6 @@ export default function StageUploadPage() {
           <ImplantSliceCardsForm
             ref={sliceFormRef}
             stageId={stageId}
-            readOnly={stageLocked}
             externalSaveControl
             onPendingChange={setSlicePending}
             onChanged={() => void load({ silent: true })}
