@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { MediaViewer } from '@/components/MediaViewer';
@@ -11,7 +11,6 @@ import {
 } from '@/components/ImplantSliceCardsForm';
 import { ImpressionCaptureModeToggle } from '@/components/ImpressionCaptureModeToggle';
 import { PageHeader } from '@/components/PageHeader';
-import { StageTabs } from '@/components/StageTabs';
 import { LoadingState } from '@/components/States';
 import {
   mediaApi,
@@ -35,21 +34,7 @@ import {
 } from '@/lib/scan-bundle';
 import { useCurrentUser } from '@/lib/use-current-user';
 
-type MediaTab = 'photo' | 'video' | 'docs' | 'stl' | 'radiology' | 'checklist' | 'history';
-
 const DESIRED_TOOTH_SHADES = ['BL1', 'BL2', 'BL3', 'BL4', 'B1', 'A1', 'A2', 'A3', 'A4'] as const;
-
-const TAB_MEDIA_TYPES: Record<MediaTab, string[] | null> = {
-  photo: ['PHOTO'],
-  video: ['VIDEO'],
-  docs: ['DOCUMENT'],
-  stl: ['STL'],
-  radiology: ['RADIOLOGY_IMAGE', 'RADIOLOGY'],
-  checklist: null,
-  history: null,
-};
-
-const TAB_PRIORITY: MediaTab[] = ['photo', 'radiology', 'stl', 'video', 'docs'];
 
 function isUploadableMediaType(mediaType: string) {
   return ![
@@ -58,19 +43,6 @@ function isUploadableMediaType(mediaType: string) {
     'RADIOLOGY_STUDY',
     'DICOM_SERIES',
   ].includes(mediaType);
-}
-
-function pickDefaultTab(requirements: RequirementInstanceDto[]): MediaTab {
-  const types = new Set(
-    requirements
-      .filter((r) => isUploadableMediaType(r.mediaRequirement.mediaType))
-      .map((r) => r.mediaRequirement.mediaType),
-  );
-  for (const tab of TAB_PRIORITY) {
-    const allowed = TAB_MEDIA_TYPES[tab];
-    if (allowed?.some((t) => types.has(t))) return tab;
-  }
-  return 'photo';
 }
 
 const ACCEPT_BY_TYPE: Record<string, string> = {
@@ -140,14 +112,11 @@ function assetsForRequirement(assets: MediaAssetDto[], requirementInstanceId: st
 
 export default function StageUploadPage() {
   const { id: caseId, stageId } = useParams<{ id: string; stageId: string }>();
-  const searchParams = useSearchParams();
-  const tabFromUrl = searchParams.get('tab') as MediaTab | null;
   const [requirements, setRequirements] = useState<RequirementInstanceDto[]>([]);
   const [assets, setAssets] = useState<MediaAssetDto[]>([]);
   /** Выбранные к загрузке файлы по requirementInstanceId (несколько — если minCount > 1). */
   const [filesByReq, setFilesByReq] = useState<Record<string, File[]>>({});
   const [slotStatus, setSlotStatus] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<MediaTab>(tabFromUrl && TAB_MEDIA_TYPES[tabFromUrl] !== undefined ? tabFromUrl : 'photo');
   const [stageCode, setStageCode] = useState<string | undefined>();
   const [stageStatus, setStageStatus] = useState<string | undefined>();
   const [impressionCaptureMode, setImpressionCaptureMode] = useState<
@@ -183,26 +152,12 @@ export default function StageUploadPage() {
         );
       setRequirements(reqs);
       setAssets(stage.mediaAssets ?? []);
-      setActiveTab((prev) => {
-        if (tabFromUrl && TAB_MEDIA_TYPES[tabFromUrl] != null) return tabFromUrl;
-        const preferred = pickDefaultTab(reqs);
-        const prevTypes = TAB_MEDIA_TYPES[prev];
-        const prevHas =
-          prevTypes?.some((t) =>
-            reqs.some(
-              (r) =>
-                isUploadableMediaType(r.mediaRequirement.mediaType) &&
-                r.mediaRequirement.mediaType === t,
-            ),
-          ) ?? false;
-        return prevHas ? prev : preferred;
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить требования этапа');
     } finally {
       if (!opts?.silent) setLoading(false);
     }
-  }, [stageId, tabFromUrl]);
+  }, [stageId]);
 
   useEffect(() => {
     void load();
@@ -211,10 +166,9 @@ export default function StageUploadPage() {
   // Drag&drop файла вне input иначе открывает снимок во вкладке браузера.
   useEffect(() => attachDocumentFileDropGuard(), []);
 
-  const tabMediaTypes = TAB_MEDIA_TYPES[activeTab];
   /** Закрытый этап правят только главный врач и админ. */
   const stageLocked = stageStatus === 'CLOSED' && !canEditClosedStage;
-  const canUploadOnTab = tabMediaTypes != null && !stageLocked;
+  const canUpload = !stageLocked;
 
   /** Все активные положения шаблона в порядке протокола. */
   const protocolOrderedRequirements = useMemo(() => {
@@ -239,23 +193,6 @@ export default function StageUploadPage() {
     });
     return map;
   }, [protocolOrderedRequirements]);
-
-  const visibleRequirements = useMemo(() => {
-    // Чек-лист / история — без карточек загрузки.
-    if (!tabMediaTypes) return [];
-    // Все активные положения шаблона (фото + рентген + …),
-    // чтобы нумерация и состав совпадали с админкой протокола.
-    return protocolOrderedRequirements;
-  }, [tabMediaTypes, protocolOrderedRequirements]);
-
-  const tabsWithRequirements = useMemo(() => {
-    const types = new Set(
-      requirements
-        .filter((r) => isUploadableMediaType(r.mediaRequirement.mediaType))
-        .map((r) => r.mediaRequirement.mediaType),
-    );
-    return TAB_PRIORITY.filter((tab) => TAB_MEDIA_TYPES[tab]?.some((t) => types.has(t)));
-  }, [requirements]);
 
   const pendingCount = useMemo(
     () => Object.values(filesByReq).reduce((n, files) => n + (files?.length ?? 0), 0),
@@ -285,14 +222,6 @@ export default function StageUploadPage() {
       return toothRank(a) - toothRank(b);
     });
   }, [assets]);
-
-  const typeAssetsSorted = useMemo(() => {
-    if (!tabMediaTypes) return protocolAssetsSorted;
-    // На вкладке рентгена показываем всю ленту протокола (ОПТГ + срезы),
-    // даже если у срезов mediaType ещё PHOTO.
-    if (activeTab === 'radiology') return protocolAssetsSorted;
-    return protocolAssetsSorted.filter((a) => tabMediaTypes.includes(a.mediaType));
-  }, [protocolAssetsSorted, tabMediaTypes, activeTab]);
 
   async function setScanFiles(
     requirementInstanceId: string,
@@ -547,15 +476,13 @@ export default function StageUploadPage() {
     <div>
       <PageHeader
         title="Загрузка материалов"
-        description="Нумерация совпадает с протоколом. Если в шаблоне указано несколько файлов — загружайте все по очереди или сразу пакетом."
+        description="Все положения этапа одним списком в порядке протокола: фото, видео, документы, 3D-сканы и рентген. Если в шаблоне указано несколько файлов — загружайте все сразу пакетом."
         actions={
           <Link href={`/cases/${caseId}/stages/${stageId}`} className="btn-secondary">
             Назад к этапу
           </Link>
         }
       />
-
-      <StageTabs active={activeTab} stageCode={stageCode} />
 
       {stageCode === 'IMPRESSIONS_OR_SCANS' ? (
         <div className="mt-4">
@@ -574,8 +501,6 @@ export default function StageUploadPage() {
                       ? 'Выбран скан: обязательны STL/OBJ верхней и нижней челюсти.'
                       : 'Выбран оттиск: обязательны фото оттисков ВЧ и НЧ.',
                   );
-                  if (mode === 'SCAN') setActiveTab('stl');
-                  if (mode === 'IMPRESSION') setActiveTab('photo');
                 } catch (err) {
                   setError(
                     err instanceof Error ? err.message : 'Не удалось сохранить способ получения',
@@ -600,59 +525,21 @@ export default function StageUploadPage() {
         </div>
       ) : null}
 
-      {activeTab === 'checklist' || activeTab === 'history' ? (
-        <div className="card mt-4 text-sm text-gray-600">
-          Для этой вкладки используйте соответствующие разделы этапа (чек-лист / история).
-        </div>
-      ) : null}
-
-      {activeTab === 'radiology' && stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
+      {stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
         <div className="card mt-4 mb-2 text-sm text-gray-600">
           Порядок: 1) предоперационное ОПТГ, 2) послеоперационное ОПТГ, 3) карточки срезов
-          имплантатов. Сводка и подтверждение хирурга — во вкладке «Отчёт».
+          имплантатов. Подтверждение хирурга выполняется при закрытии этапа.
         </div>
       ) : null}
 
-      {activeTab === 'radiology' &&
-      stageCode !== 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' &&
-      requirements.some(
-        (r) =>
-          r.mediaRequirement.mediaType === 'STRUCTURED_CONFIRMATION' ||
-          r.mediaRequirement.mediaType === 'STRUCTURED_DATA',
-      ) ? (
+      {protocolOrderedRequirements.length === 0 ? (
         <div className="card mt-4 text-sm text-gray-600">
-          Ниже — загрузка снимков и исследований по положениям протокола.
-        </div>
-      ) : null}
-
-      {canUploadOnTab && visibleRequirements.length === 0 ? (
-        <div className="card mt-4 text-sm text-gray-600">
-          Для этой вкладки в шаблоне этапа нет требований к материалам.
-          {tabsWithRequirements.length > 0 ? (
-            <span>
-              {' '}
-              Материалы этапа доступны во вкладках:{' '}
-              {tabsWithRequirements
-                .map((t) =>
-                  t === 'photo'
-                    ? 'Фото'
-                    : t === 'video'
-                      ? 'Видео'
-                      : t === 'docs'
-                        ? 'Документы'
-                        : t === 'stl'
-                          ? '3D-скан'
-                          : 'Рентгенология',
-                )
-                .join(', ')}
-              .
-            </span>
-          ) : null}
+          В шаблоне этапа нет требований к материалам.
         </div>
       ) : null}
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        {visibleRequirements.map((ri) => {
+        {protocolOrderedRequirements.map((ri) => {
           const req = ri.mediaRequirement;
           const currentAssets = assetsForRequirement(assets, ri.id, req.code);
           const assigned = currentAssets.length;
@@ -868,7 +755,7 @@ export default function StageUploadPage() {
         })}
       </div>
 
-      {activeTab === 'radiology' && stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
+      {stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
         <div className="mt-4">
           <ImplantSliceCardsForm
             ref={sliceFormRef}
@@ -881,7 +768,7 @@ export default function StageUploadPage() {
         </div>
       ) : null}
 
-      {(canUploadOnTab && visibleRequirements.length > 0) || slicePending > 0 ? (
+      {(canUpload && protocolOrderedRequirements.length > 0) || slicePending > 0 ? (
         <div className="card mt-4 max-w-xl space-y-3">
           {progress !== null ? (
             <div>
@@ -903,14 +790,14 @@ export default function StageUploadPage() {
               : `Сохранить выбранные (${pendingCount + slicePending})`}
           </button>
 
-          {typeAssetsSorted.length > 0 ? (
+          {protocolAssetsSorted.length > 0 ? (
             <>
               <button
                 type="button"
                 className="btn-secondary"
-                onClick={() => setViewer({ assets: typeAssetsSorted, index: 0 })}
+                onClick={() => setViewer({ assets: protocolAssetsSorted, index: 0 })}
               >
-                Просмотреть загруженные ({typeAssetsSorted.length})
+                Просмотреть загруженные ({protocolAssetsSorted.length})
               </button>
               <button
                 type="button"

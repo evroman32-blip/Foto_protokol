@@ -87,7 +87,6 @@ export default function CaseDetailPage() {
           <tbody>
             {stages.map((s) => {
               const blockers = s.completeness?.blockingReasons ?? [];
-              const isSurgical = s.stageTemplate.code === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL';
               return (
                 <tr key={s.id}>
                   <td>{s.stageTemplate.sortOrder}</td>
@@ -102,15 +101,10 @@ export default function CaseDetailPage() {
                       <span className="text-xs text-gray-500">—</span>
                     )}
                   </td>
-                  <td className="space-x-2">
+                  <td>
                     <Link href={`/cases/${id}/stages/${s.id}`} className="text-sm">
                       Этап
                     </Link>
-                    {isSurgical ? (
-                      <Link href={`/cases/${id}/stages/${s.id}/surgical-radiology`} className="text-sm">
-                        Рентгенология
-                      </Link>
-                    ) : null}
                   </td>
                 </tr>
               );
