@@ -15,6 +15,13 @@ export enum UserRole {
   ASSISTANT = 'ASSISTANT',
   RADIOLOGY_OPERATOR = 'RADIOLOGY_OPERATOR',
   AUDITOR = 'AUDITOR',
+  EXPERT = 'EXPERT',
+}
+
+export enum UserAccountStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
 }
 
 export enum ParticipantRole {

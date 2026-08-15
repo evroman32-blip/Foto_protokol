@@ -18,6 +18,13 @@ enum UserRole {
   ASSISTANT
   RADIOLOGY_OPERATOR
   AUDITOR
+  EXPERT
+}
+
+enum UserAccountStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum Sex {
@@ -266,17 +273,20 @@ model StaffMember {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  staffMemberId String?   @unique
-  staffMember   StaffMember? @relation(fields: [staffMemberId], references: [id])
-  email         String    @unique
-  phone         String?
-  passwordHash  String
-  role          UserRole
-  isActive      Boolean   @default(true)
-  lastLoginAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String            @id @default(uuid())
+  staffMemberId  String?           @unique
+  staffMember    StaffMember?      @relation(fields: [staffMemberId], references: [id])
+  email          String            @unique
+  phone          String?
+  passwordHash   String
+  role           UserRole
+  requestedRole  UserRole?
+  accountStatus  UserAccountStatus @default(APPROVED)
+  accentColor    String            @default("#e85d04")
+  isActive       Boolean           @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 }
 
 model Patient {

@@ -56,6 +56,39 @@ export const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
   DENTAL_TECHNICIAN: 'Зубной техник',
 };
 
+export const USER_ROLE_LABELS: Record<string, string> = {
+  SYSTEM_ADMIN: 'Администратор',
+  CHIEF_DOCTOR: 'Главный врач',
+  ORTHOPEDIC_MANAGER: 'Ортопед-менеджер',
+  SURGEON: 'Хирург',
+  ORTHOPEDIST: 'Ортопед',
+  CONSULTING_DOCTOR: 'Консультирующий врач',
+  DENTAL_TECHNICIAN: 'Зубной техник',
+  ASSISTANT: 'Ассистент',
+  RADIOLOGY_OPERATOR: 'Рентген-лаборант',
+  AUDITOR: 'Аудитор',
+  EXPERT: 'Эксперт',
+};
+
+export const ACCOUNT_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Ожидает подтверждения',
+  APPROVED: 'Подтверждён',
+  REJECTED: 'Отклонён',
+};
+
+export const ACCENT_COLORS = [
+  '#e85d04',
+  '#1d4ed8',
+  '#15803d',
+  '#7c3aed',
+  '#be185d',
+  '#0f766e',
+  '#b45309',
+  '#334155',
+  '#dc2626',
+  '#0369a1',
+] as const;
+
 export const SURGICAL_RADIOLOGY_BLOCKS = [
   { id: 'optg', title: '1. ОПТГ', description: 'Ортопantomogramma после операции' },
   { id: 'slice-cards', title: '2. Карточки срезов', description: 'Челюсть, зуб, вид, метод, JPG' },

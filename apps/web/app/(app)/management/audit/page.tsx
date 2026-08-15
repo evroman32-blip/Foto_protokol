@@ -40,7 +40,7 @@ export default function ManagementAuditPage() {
               <tr key={e.id}>
                 <td>{new Date(e.createdAt).toLocaleString('ru-RU')}</td>
                 <td>{e.eventType}</td>
-                <td>{e.actorEmail ?? e.actorUserId ?? '—'}</td>
+                <td>{e.actorName ?? e.actorEmail ?? e.actorUserId ?? '—'}</td>
                 <td className="text-xs">{e.clinicalCaseId ?? '—'}</td>
               </tr>
             ))}

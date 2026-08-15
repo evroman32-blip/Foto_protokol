@@ -11,8 +11,6 @@ interface MediaViewerProps {
   assets: MediaAssetDto[];
   initialIndex: number;
   onClose: () => void;
-  /** Подпись набора, напр. «Фото этапа» */
-  setLabel?: string;
 }
 
 function isImage(mime?: string, mediaType?: string) {
@@ -43,29 +41,12 @@ function isObjScan(mime?: string, _mediaType?: string, fileName?: string) {
   return isTexturedScanAsset(fileName, mime);
 }
 
-function mediaTypeLabel(mediaType?: string) {
-  switch (mediaType) {
-    case 'PHOTO':
-      return 'Фото';
-    case 'VIDEO':
-      return 'Видео';
-    case 'DOCUMENT':
-      return 'Документ';
-    case 'STL':
-      return '3D-скан';
-    case 'RADIOLOGY_IMAGE':
-      return 'Рентген';
-    default:
-      return mediaType ?? 'Файлы';
-  }
-}
-
 function assetBaseName(asset: MediaAssetDto) {
   const name = asset.displayName ?? asset.positionName ?? asset.originalFileName ?? 'Файл';
   return name.replace(/^\d+\.\s*/, '');
 }
 
-export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaViewerProps) {
+export function MediaViewer({ assets, initialIndex, onClose }: MediaViewerProps) {
   const [index, setIndex] = useState(initialIndex);
   const [view, setView] = useState<MediaViewUrlDto | null>(null);
   const [displayUrl, setDisplayUrl] = useState<string | null>(null);
@@ -78,7 +59,6 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
 
   const asset = assets[index];
   const title = asset ? `${index + 1}. ${assetBaseName(asset)}` : 'Файл';
-  const typeLabel = setLabel ?? mediaTypeLabel(asset?.mediaType);
 
   useEffect(() => {
     if (!asset) return;
@@ -177,9 +157,7 @@ export function MediaViewer({ assets, initialIndex, onClose, setLabel }: MediaVi
           <div className="min-w-0">
             <div className="truncate font-medium text-graphite">{title}</div>
             <div className="mt-0.5 truncate text-xs text-gray-500">
-              {typeLabel}
-              {asset.requirementCode ? ` · ${asset.requirementCode}` : ''}
-              {` · ${index + 1} / ${assets.length} (порядок протокола)`}
+              {`${index + 1} / ${assets.length}`}
               {view?.hasPreview ? ' · превью' : ''}
             </div>
           </div>

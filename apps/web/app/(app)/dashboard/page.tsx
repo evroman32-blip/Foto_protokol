@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '@/components/States';
 import { casesApi, type ClinicalCaseDto } from '@/lib/api';
 import { CASE_STATUS_LABELS, JAW_SCOPE_LABELS } from '@/lib/constants';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 function patientName(p: ClinicalCaseDto['patient']) {
   return [p.lastName, p.firstName, p.middleName].filter(Boolean).join(' ');
@@ -62,6 +63,7 @@ function CaseRow({ c }: { c: ClinicalCaseDto }) {
 }
 
 export default function DashboardPage() {
+  const { isReadOnly } = useCurrentUser();
   const [cases, setCases] = useState<ClinicalCaseDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,9 +90,11 @@ export default function DashboardPage() {
         title="Панель управления"
         description="Клинические случаи и предупреждения по комплектности этапов"
         actions={
-          <Link href="/cases/new" className="btn-primary">
-            Новый случай
-          </Link>
+          isReadOnly ? undefined : (
+            <Link href="/cases/new" className="btn-primary">
+              Новый случай
+            </Link>
+          )
         }
       />
 
@@ -101,9 +105,11 @@ export default function DashboardPage() {
         <EmptyState
           message="Клинических случаев пока нет"
           action={
-            <Link href="/cases/new" className="btn-primary">
-              Создать первый случай
-            </Link>
+            isReadOnly ? undefined : (
+              <Link href="/cases/new" className="btn-primary">
+                Создать первый случай
+              </Link>
+            )
           }
         />
       ) : null}

@@ -43,6 +43,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: user.role,
       staffMemberId: user.staffMemberId,
       branchId: user.staffMember?.branchId ?? null,
+      accountStatus: (user as { accountStatus?: string }).accountStatus ?? 'APPROVED',
+      requestedRole: (user as { requestedRole?: string | null }).requestedRole ?? null,
     };
   }
 }

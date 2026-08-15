@@ -1,10 +1,29 @@
-import { Body, Controller, Get, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { FastifyReply } from 'fastify';
-import { IsEmail, IsString, MinLength } from 'class-validator';
-import { Public, SkipAudit } from '../../common/decorators/metadata.decorators';
+import {
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  Matches,
+  MinLength,
+} from 'class-validator';
+import { UserRole } from '@mandarin/contracts';
+import {
+  AllowReadonlyMutation,
+  AuditAction,
+  Public,
+  SkipAudit,
+} from '../../common/decorators/metadata.decorators';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
-import { AuthService } from './auth.service';
+import {
+  ACCENT_COLORS,
+  ACCOUNT_STATUS_LABELS,
+  AuthService,
+  REGISTERABLE_ROLES,
+  USER_ROLE_LABELS,
+} from './auth.service';
 
 class LoginDto {
   @IsEmail({}, { message: 'Некорректный email' })
@@ -15,10 +34,105 @@ class LoginDto {
   password!: string;
 }
 
+class RegisterDto {
+  @IsString()
+  @MinLength(1, { message: 'Укажите фамилию' })
+  lastName!: string;
+
+  @IsString()
+  @MinLength(1, { message: 'Укажите имя' })
+  firstName!: string;
+
+  @IsOptional()
+  @IsString()
+  middleName?: string;
+
+  @IsString()
+  @MinLength(5, { message: 'Укажите номер телефона' })
+  phone!: string;
+
+  @IsEmail({}, { message: 'Некорректный email' })
+  email!: string;
+
+  @IsString()
+  @MinLength(8, { message: 'Пароль должен содержать минимум 8 символов' })
+  password!: string;
+
+  @IsEnum(UserRole, { message: 'Выберите статус' })
+  requestedRole!: UserRole;
+
+  @IsString()
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'Некорректный цвет кнопки' })
+  accentColor!: string;
+}
+
+class UpdateProfileDto {
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  middleName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  phone?: string | null;
+
+  @IsOptional()
+  @IsEmail({}, { message: 'Некорректный email' })
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(8, { message: 'Пароль должен содержать минимум 8 символов' })
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'Некорректный цвет кнопки' })
+  accentColor?: string;
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Public()
+  @Get('register-options')
+  registerOptions() {
+    return {
+      roles: REGISTERABLE_ROLES.map((value) => ({
+        value,
+        label: USER_ROLE_LABELS[value],
+      })),
+      accentColors: ACCENT_COLORS,
+      accountStatuses: Object.entries(ACCOUNT_STATUS_LABELS).map(([value, label]) => ({
+        value,
+        label,
+      })),
+    };
+  }
+
+  @Public()
+  @SkipAudit()
+  @Post('register')
+  @ApiOperation({ summary: 'Регистрация аккаунта' })
+  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) reply: FastifyReply) {
+    const result = await this.authService.register(dto);
+    reply.setCookie('access_token', result.accessToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 8 * 60 * 60,
+    });
+    return result;
+  }
 
   @Public()
   @SkipAudit()
@@ -38,6 +152,7 @@ export class AuthController {
     return { accessToken: token, user };
   }
 
+  @AllowReadonlyMutation()
   @Post('logout')
   @ApiOperation({ summary: 'Выход из системы' })
   async logout(@Res({ passthrough: true }) reply: FastifyReply) {
@@ -49,5 +164,13 @@ export class AuthController {
   @ApiOperation({ summary: 'Текущий пользователь' })
   async me(@CurrentUser() user: AuthUser) {
     return this.authService.getProfile(user.id);
+  }
+
+  @AllowReadonlyMutation()
+  @AuditAction('auth.profile.update')
+  @Patch('me')
+  @ApiOperation({ summary: 'Изменить свой профиль' })
+  async updateMe(@CurrentUser() user: AuthUser, @Body() dto: UpdateProfileDto) {
+    return this.authService.updateProfile(user.id, dto);
   }
 }

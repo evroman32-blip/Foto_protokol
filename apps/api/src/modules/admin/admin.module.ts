@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
@@ -30,6 +31,7 @@ import { CurrentUser, AuthUser } from '../../common/decorators/current-user.deco
 import { Module } from '@nestjs/common';
 import { StagesModule } from '../stages/stages.module';
 import { StageTemplateSyncService } from '../stages/stage-template-sync.service';
+import { USER_ROLE_LABELS } from '../auth/auth.service';
 
 /** Короткий код метода: M1A, M2, M10A */
 function parseShortMethodCode(raw: string): {
@@ -263,6 +265,78 @@ export class AdminController {
     private readonly prisma: PrismaService,
     private readonly templateSync: StageTemplateSyncService,
   ) {}
+
+  @Get('account-requests')
+  @Roles(UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR)
+  async listAccountRequests(@Query('status') status?: string) {
+    const accountStatus =
+      status === 'APPROVED' || status === 'REJECTED' || status === 'PENDING' ? status : 'PENDING';
+    const rows = await this.prisma.user.findMany({
+      where: { accountStatus },
+      include: { staffMember: { include: { branch: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((user) => ({
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      roleLabel: USER_ROLE_LABELS[user.role] ?? user.role,
+      requestedRole: user.requestedRole,
+      requestedRoleLabel: user.requestedRole
+        ? (USER_ROLE_LABELS[user.requestedRole] ?? user.requestedRole)
+        : null,
+      accountStatus: user.accountStatus,
+      accentColor: user.accentColor,
+      createdAt: user.createdAt,
+      lastName: user.staffMember?.lastName ?? '',
+      firstName: user.staffMember?.firstName ?? '',
+      middleName: user.staffMember?.middleName ?? null,
+    }));
+  }
+
+  @Post('users/:id/approve')
+  @Roles(UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR)
+  @AuditAction('auth.account.approve')
+  async approveAccount(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id } });
+    const nextRole = user.requestedRole ?? user.role;
+    if (
+      (nextRole === UserRole.SYSTEM_ADMIN ||
+        nextRole === UserRole.CHIEF_DOCTOR ||
+        nextRole === UserRole.AUDITOR) &&
+      actor.role !== UserRole.SYSTEM_ADMIN
+    ) {
+      throw new ForbiddenException(
+        'Назначить главного врача, администратора или аудитора может только администратор.',
+      );
+    }
+    if (nextRole === UserRole.SYSTEM_ADMIN) {
+      throw new ForbiddenException('Роль администратора нельзя выдать через заявку.');
+    }
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        role: nextRole,
+        accountStatus: 'APPROVED',
+      },
+      include: { staffMember: true },
+    });
+  }
+
+  @Post('users/:id/reject')
+  @Roles(UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR)
+  @AuditAction('auth.account.reject')
+  async rejectAccount(@Param('id') id: string) {
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        role: UserRole.EXPERT,
+        accountStatus: 'REJECTED',
+      },
+      include: { staffMember: true },
+    });
+  }
 
   @Get('protocol-versions')
   async listProtocolVersions() {

@@ -51,15 +51,70 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 // --- Auth ---
+export interface AuthProfileDto {
+  id: string;
+  email: string;
+  phone?: string | null;
+  role: string;
+  roleLabel: string;
+  requestedRole?: string | null;
+  requestedRoleLabel?: string | null;
+  accountStatus: string;
+  accountStatusLabel: string;
+  accentColor: string;
+  lastLoginAt?: string | null;
+  lastName: string;
+  firstName: string;
+  middleName?: string | null;
+  position?: string | null;
+  isReadOnly: boolean;
+}
+
 export interface LoginResponse {
   accessToken: string;
-  user: { id: string; email: string; role: string; staffMemberId?: string | null };
+  user: { id: string; email: string; role: string; staffMemberId?: string | null } | AuthProfileDto;
+}
+
+export interface RegisterPayload {
+  lastName: string;
+  firstName: string;
+  middleName?: string;
+  phone: string;
+  email: string;
+  password: string;
+  requestedRole: string;
+  accentColor: string;
+}
+
+export interface AccountRequestDto {
+  id: string;
+  email: string;
+  phone?: string | null;
+  role: string;
+  roleLabel: string;
+  requestedRole?: string | null;
+  requestedRoleLabel?: string | null;
+  accountStatus: string;
+  accentColor: string;
+  createdAt: string;
+  lastName: string;
+  firstName: string;
+  middleName?: string | null;
 }
 
 export const authApi = {
   login: (email: string, password: string) =>
     request<LoginResponse>('/api/v1/auth/login', { method: 'POST', body: { email, password } }),
-  me: () => request<{ id: string; email: string; role: string }>('/api/v1/auth/me'),
+  register: (data: RegisterPayload) =>
+    request<LoginResponse>('/api/v1/auth/register', { method: 'POST', body: data }),
+  registerOptions: () =>
+    request<{
+      roles: { value: string; label: string }[];
+      accentColors: string[];
+    }>('/api/v1/auth/register-options'),
+  me: () => request<AuthProfileDto>('/api/v1/auth/me'),
+  updateMe: (data: Partial<RegisterPayload> & { password?: string }) =>
+    request<AuthProfileDto>('/api/v1/auth/me', { method: 'PATCH', body: data }),
 };
 
 // --- Patients ---
@@ -240,6 +295,14 @@ function normalizeProtocolVersion(v: ProtocolVersionDto): ProtocolVersionDto {
 }
 
 export const adminApi = {
+  accountRequests: (status?: string) => {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    return request<AccountRequestDto[]>(`/api/v1/admin/account-requests${qs}`);
+  },
+  approveAccount: (id: string) =>
+    request<unknown>(`/api/v1/admin/users/${id}/approve`, { method: 'POST' }),
+  rejectAccount: (id: string) =>
+    request<unknown>(`/api/v1/admin/users/${id}/reject`, { method: 'POST' }),
   branches: (params?: { active?: boolean | 'all' }) => {
     const search = new URLSearchParams();
     if (params?.active === true) search.set('active', 'true');
@@ -865,6 +928,7 @@ export interface AuditEventDto {
   eventType: string;
   actorUserId?: string | null;
   actorEmail?: string | null;
+  actorName?: string | null;
   clinicalCaseId?: string | null;
   stageInstanceId?: string | null;
   payload?: Record<string, unknown>;

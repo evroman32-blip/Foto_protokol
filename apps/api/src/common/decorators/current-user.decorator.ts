@@ -6,6 +6,8 @@ export interface AuthUser {
   role: string;
   staffMemberId: string | null;
   branchId: string | null;
+  accountStatus: string;
+  requestedRole: string | null;
 }
 
 export const CurrentUser = createParamDecorator(

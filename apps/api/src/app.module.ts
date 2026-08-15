@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { ExpertWriteGuard } from './common/guards/expert-write.guard';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { PrismaModule } from './common/services/prisma.module';
 import { HealthModule } from './modules/health/health.module';
@@ -52,6 +53,7 @@ import { QueueModule } from './modules/queue/queue.module';
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: ExpertWriteGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })

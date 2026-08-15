@@ -5,16 +5,20 @@ import { usePathname, useRouter } from 'next/navigation';
 
 import { BRAND } from '@/lib/constants';
 import { logout } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 interface NavItem {
   href: string;
   label: string;
   prefix?: string;
+  roles?: string[];
+  hideForExpert?: boolean;
 }
 
 interface NavGroup {
   title: string;
   items: NavItem[];
+  hideForExpert?: boolean;
 }
 
 const NAV: NavGroup[] = [
@@ -23,12 +27,13 @@ const NAV: NavGroup[] = [
     items: [
       { href: '/dashboard', label: 'Панель управления' },
       { href: '/patients', label: 'Пациенты', prefix: '/patients' },
-      { href: '/staff', label: 'Сотрудники', prefix: '/staff' },
-      { href: '/cases/new', label: 'Новый случай', prefix: '/cases' },
+      { href: '/staff', label: 'Сотрудники', prefix: '/staff', hideForExpert: true },
+      { href: '/cases/new', label: 'Новый случай', prefix: '/cases/new', hideForExpert: true },
     ],
   },
   {
     title: 'Управление',
+    hideForExpert: true,
     items: [
       { href: '/management', label: 'Обзор', prefix: '/management' },
       { href: '/management/audit', label: 'Аудит' },
@@ -39,7 +44,13 @@ const NAV: NavGroup[] = [
   },
   {
     title: 'Администрирование',
+    hideForExpert: true,
     items: [
+      {
+        href: '/admin/accounts',
+        label: 'Заявки на доступ',
+        roles: ['SYSTEM_ADMIN', 'CHIEF_DOCTOR'],
+      },
       { href: '/admin/branches', label: 'Филиалы', prefix: '/admin/branches' },
       { href: '/admin/protocols', label: 'Протоколы', prefix: '/admin/protocols' },
       { href: '/admin/implant-placement-methods', label: 'Методы имплантации' },
@@ -60,6 +71,7 @@ function isActive(pathname: string, item: NavItem): boolean {
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { role, isReadOnly } = useCurrentUser();
 
   async function handleLogout() {
     await logout();
@@ -74,32 +86,41 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {NAV.map((group) => (
-          <div key={group.title} className="mb-5">
-            <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              {group.title}
+        {NAV.map((group) => {
+          if (isReadOnly && group.hideForExpert) return null;
+          const items = group.items.filter((item) => {
+            if (isReadOnly && item.hideForExpert) return false;
+            if (item.roles && role && !item.roles.includes(role)) return false;
+            return true;
+          });
+          if (!items.length) return null;
+          return (
+            <div key={group.title} className="mb-5">
+              <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                {group.title}
+              </div>
+              <ul className="space-y-0.5">
+                {items.map((item) => {
+                  const active = isActive(pathname, item);
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        className={`block rounded px-2 py-2 text-sm transition ${
+                          active
+                            ? 'border-l-2 border-accent bg-accent-light font-medium text-accent'
+                            : 'text-graphite hover:bg-surface-muted'
+                        }`}
+                      >
+                        {item.label}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-            <ul className="space-y-0.5">
-              {group.items.map((item) => {
-                const active = isActive(pathname, item);
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      className={`block rounded px-2 py-2 text-sm transition ${
-                        active
-                          ? 'border-l-2 border-accent bg-accent-light font-medium text-accent'
-                          : 'text-graphite hover:bg-surface-muted'
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
       <div className="border-t border-border p-4">

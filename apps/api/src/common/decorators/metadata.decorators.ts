@@ -12,3 +12,7 @@ export const SkipAudit = () => SetMetadata(SKIP_AUDIT_KEY, true);
 
 export const AUDIT_ACTION_KEY = 'auditAction';
 export const AuditAction = (action: string) => SetMetadata(AUDIT_ACTION_KEY, action);
+
+/** Разрешить EXPERT / неподтверждённым мутацию (профиль, выход). */
+export const ALLOW_READONLY_MUTATION_KEY = 'allowReadonlyMutation';
+export const AllowReadonlyMutation = () => SetMetadata(ALLOW_READONLY_MUTATION_KEY, true);

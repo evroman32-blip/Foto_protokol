@@ -119,6 +119,8 @@ export class StaffController {
           email: dto.email,
           passwordHash,
           role: dto.role,
+          requestedRole: dto.role,
+          accountStatus: 'APPROVED',
           staffMemberId: staff.id,
         },
       });

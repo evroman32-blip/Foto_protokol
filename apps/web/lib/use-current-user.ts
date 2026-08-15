@@ -1,14 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-import { authApi } from './api';
+import { authApi, type AuthProfileDto } from './api';
 
-export interface CurrentUser {
-  id: string;
-  email: string;
-  role: string;
-}
+export type CurrentUser = AuthProfileDto;
 
 /** Роли, которым разрешено менять состав файлов уже закрытого этапа. */
 export const CLOSED_STAGE_EDITOR_ROLES = ['SYSTEM_ADMIN', 'CHIEF_DOCTOR'];
@@ -17,31 +13,41 @@ export function canEditClosedStage(role: string | null | undefined): boolean {
   return Boolean(role && CLOSED_STAGE_EDITOR_ROLES.includes(role));
 }
 
+export function isReadOnlyRole(role: string | null | undefined): boolean {
+  return role === 'EXPERT';
+}
+
 export function useCurrentUser() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const me = await authApi.me();
-        if (active) setUser(me);
-      } catch {
-        // Профиль недоступен — считаем права минимальными.
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
+  const reload = useCallback(async () => {
+    try {
+      const me = await authApi.me();
+      setUser(me);
+      return me;
+    } catch {
+      setUser(null);
+      return null;
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const role = user?.role ?? null;
+  const readOnly = isReadOnlyRole(role);
 
   return {
     user,
-    role: user?.role ?? null,
+    role,
     loading,
-    canEditClosedStage: canEditClosedStage(user?.role),
+    reload,
+    isReadOnly: readOnly,
+    canEditClosedStage: !readOnly && canEditClosedStage(role),
+    canApproveAccounts: role === 'SYSTEM_ADMIN' || role === 'CHIEF_DOCTOR',
   };
 }

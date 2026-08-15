@@ -44,23 +44,6 @@ function assetTitle(asset: MediaAssetDto, sequenceNo: number) {
   return `${sequenceNo}. ${assetBaseName(asset)}`;
 }
 
-function mediaTypeLabel(mediaType: string) {
-  switch (mediaType) {
-    case 'PHOTO':
-      return 'Фото';
-    case 'VIDEO':
-      return 'Видео';
-    case 'DOCUMENT':
-      return 'Документ';
-    case 'STL':
-      return 'STL';
-    case 'RADIOLOGY_IMAGE':
-      return 'Рентген';
-    default:
-      return mediaType;
-  }
-}
-
 export default function StageDetailPage() {
   const { id: caseId, stageId } = useParams<{ id: string; stageId: string }>();
   const [stage, setStage] = useState<StageDetailDto | null>(null);
@@ -69,12 +52,12 @@ export default function StageDetailPage() {
   > | null>(null);
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
-  const { canEditClosedStage } = useCurrentUser();
+  const { canEditClosedStage, isReadOnly } = useCurrentUser();
   const [modeBusy, setModeBusy] = useState(false);
   const [busyMedia, setBusyMedia] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<{ assets: MediaAssetDto[]; index: number; label: string } | null>(
+  const [viewer, setViewer] = useState<{ assets: MediaAssetDto[]; index: number } | null>(
     null,
   );
 
@@ -128,7 +111,6 @@ export default function StageDetailPage() {
     setViewer({
       assets,
       index,
-      label: 'Медиаматериалы этапа',
     });
   }
 
@@ -204,8 +186,8 @@ export default function StageDetailPage() {
   const isSurgicalRadiology =
     stage?.stageTemplate.code === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL';
   const isClosed = stage?.status === 'CLOSED';
-  /** После закрытия состав файлов правят только главный врач и админ. */
-  const mediaEditable = !isClosed || canEditClosedStage;
+  /** После закрытия состав файлов правят только главный врач и админ. Эксперт — только просмотр. */
+  const mediaEditable = !isReadOnly && (!isClosed || canEditClosedStage);
 
   const needsDoctorConfirm =
     completeness?.blockingReasons?.some((r) =>
@@ -304,7 +286,7 @@ export default function StageDetailPage() {
         <ImpressionCaptureModeToggle
           value={stage.impressionCaptureMode}
           busy={modeBusy}
-          disabled={stage.status === 'CLOSED'}
+          disabled={stage.status === 'CLOSED' || isReadOnly}
           onChange={(mode) => {
             void (async () => {
               setModeBusy(true);
@@ -342,12 +324,14 @@ export default function StageDetailPage() {
             <button
               type="button"
               className="btn-secondary"
-              disabled={closing || isClosed}
+              disabled={closing || isClosed || isReadOnly}
               onClick={() => void handleCloseStage()}
               title={
-                isClosed
-                  ? 'Этап уже закрыт'
-                  : 'Подтвердить и закрыть этап при полной комплектности'
+                isReadOnly
+                  ? 'В режиме просмотра закрытие этапа недоступно'
+                  : isClosed
+                    ? 'Этап уже закрыт'
+                    : 'Подтвердить и закрыть этап при полной комплектности'
               }
             >
               {closing ? 'Закрытие…' : isClosed ? 'Этап закрыт' : 'Закрыть этап'}
@@ -377,11 +361,6 @@ export default function StageDetailPage() {
             </button>
           ) : null}
         </div>
-        <p className="mb-3 text-xs text-gray-500">
-          {mediaEditable
-            ? 'Можно удалить лишние файлы. Обязательный минимум по каждому положению протокола сохраняется.'
-            : 'Этап закрыт: файлы доступны только для просмотра.'}
-        </p>
         {assets.length ? (
           <ul className="space-y-1 text-sm">
             {assets.map((asset, idx) => {
@@ -395,29 +374,22 @@ export default function StageDetailPage() {
                     onClick={() => openViewer(asset)}
                   >
                     <span className="font-medium">{title}</span>
-                    <span className="mt-0.5 block truncate text-xs text-gray-500">
-                      {mediaTypeLabel(asset.mediaType)}
-                      {asset.requirementCode ? ` · ${asset.requirementCode}` : ''}
-                    </span>
                   </button>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="badge-muted">{asset.status}</span>
-                    {mediaEditable ? (
-                      <button
-                        type="button"
-                        className="btn-secondary !px-2 !py-1 text-xs"
-                        disabled={busyMedia || !deletable}
-                        title={
-                          deletable
-                            ? 'Удалить файл'
-                            : 'Нельзя удалить: обязательный минимум для положения'
-                        }
-                        onClick={() => void handleDelete(asset)}
-                      >
-                        Удалить
-                      </button>
-                    ) : null}
-                  </div>
+                  {mediaEditable ? (
+                    <button
+                      type="button"
+                      className="btn-secondary shrink-0 !px-2 !py-1 text-xs"
+                      disabled={busyMedia || !deletable}
+                      title={
+                        deletable
+                          ? 'Удалить файл'
+                          : 'Нельзя удалить: обязательный минимум для положения'
+                      }
+                      onClick={() => void handleDelete(asset)}
+                    >
+                      Удалить
+                    </button>
+                  ) : null}
                 </li>
               );
             })}
@@ -431,7 +403,6 @@ export default function StageDetailPage() {
         <MediaViewer
           assets={viewer.assets}
           initialIndex={viewer.index}
-          setLabel={viewer.label}
           onClose={() => setViewer(null)}
         />
       ) : null}

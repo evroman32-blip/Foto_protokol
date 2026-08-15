@@ -134,7 +134,7 @@ export default function StageUploadPage() {
   /** Очередь срезов имплантатов — сохраняется той же кнопкой, что и остальные положения. */
   const sliceFormRef = useRef<SliceCardsHandle>(null);
   const [slicePending, setSlicePending] = useState(0);
-  const { canEditClosedStage } = useCurrentUser();
+  const { canEditClosedStage, isReadOnly } = useCurrentUser();
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -166,8 +166,8 @@ export default function StageUploadPage() {
   // Drag&drop файла вне input иначе открывает снимок во вкладке браузера.
   useEffect(() => attachDocumentFileDropGuard(), []);
 
-  /** Закрытый этап правят только главный врач и админ. */
-  const stageLocked = stageStatus === 'CLOSED' && !canEditClosedStage;
+  /** Закрытый этап правят только главный врач и админ. Эксперт — только просмотр. */
+  const stageLocked = isReadOnly || (stageStatus === 'CLOSED' && !canEditClosedStage);
   const canUpload = !stageLocked;
 
   /** Все активные положения шаблона в порядке протокола. */
@@ -517,7 +517,14 @@ export default function StageUploadPage() {
       {error ? <div className="alert-error mb-4 mt-4">{error}</div> : null}
       {message ? <div className="mb-4 mt-4 text-sm text-status-success">{message}</div> : null}
 
-      {stageStatus === 'CLOSED' ? (
+      {isReadOnly ? (
+        <div className="card mt-4 border-status-warning/40 text-sm text-graphite">
+          Режим просмотра: загрузка, замена и удаление файлов недоступны, пока администратор не
+          подтвердит ваши права доступа.
+        </div>
+      ) : null}
+
+      {stageStatus === 'CLOSED' && !isReadOnly ? (
         <div className="card mt-4 border-status-warning/40 text-sm text-graphite">
           {stageLocked
             ? 'Этап закрыт. Загрузка, замена и удаление файлов недоступны — изменить состав материалов могут только главный врач и администратор.'

@@ -81,7 +81,6 @@ export default function CaseDetailPage() {
               <th>Этап</th>
               <th>Статус</th>
               <th>Блокировки</th>
-              <th />
             </tr>
           </thead>
           <tbody>
@@ -90,7 +89,14 @@ export default function CaseDetailPage() {
               return (
                 <tr key={s.id}>
                   <td>{s.stageTemplate.sortOrder}</td>
-                  <td>{s.stageTemplate.name}</td>
+                  <td>
+                    <Link
+                      href={`/cases/${id}/stages/${s.id}`}
+                      className="font-medium text-graphite no-underline hover:text-accent hover:underline"
+                    >
+                      {s.stageTemplate.name}
+                    </Link>
+                  </td>
                   <td>
                     <span className="badge-muted">{STAGE_STATUS_LABELS[s.status] ?? s.status}</span>
                   </td>
@@ -100,11 +106,6 @@ export default function CaseDetailPage() {
                     ) : (
                       <span className="text-xs text-gray-500">—</span>
                     )}
-                  </td>
-                  <td>
-                    <Link href={`/cases/${id}/stages/${s.id}`} className="text-sm">
-                      Этап
-                    </Link>
                   </td>
                 </tr>
               );

@@ -76,6 +76,13 @@ function LoginForm() {
           <button type="submit" disabled={loading} className="btn-primary w-full">
             {loading ? 'Вход…' : 'Войти'}
           </button>
+
+          <p className="text-center text-sm text-gray-600">
+            Нет аккаунта?{' '}
+            <a href="/register" className="text-accent hover:underline">
+              Регистрация
+            </a>
+          </p>
         </form>
       </div>
     </div>

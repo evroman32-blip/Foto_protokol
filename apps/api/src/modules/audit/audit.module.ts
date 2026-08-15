@@ -5,6 +5,22 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { Roles } from '../../common/decorators/metadata.decorators';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Module } from '@nestjs/common';
+import { USER_ROLE_LABELS } from '../auth/auth.service';
+
+function actorName(actor: {
+  email: string;
+  role: string;
+  staffMember?: { lastName: string; firstName: string; middleName: string | null } | null;
+} | null) {
+  if (!actor) return null;
+  const fio = actor.staffMember
+    ? [actor.staffMember.lastName, actor.staffMember.firstName, actor.staffMember.middleName]
+        .filter(Boolean)
+        .join(' ')
+    : '';
+  const role = USER_ROLE_LABELS[actor.role] ?? actor.role;
+  return fio ? `${fio} (${role})` : `${actor.email} (${role})`;
+}
 
 @ApiTags('audit')
 @Controller('audit')
@@ -33,17 +49,26 @@ export class AuditController {
     const actors = actorIds.length
       ? await this.prisma.user.findMany({
           where: { id: { in: actorIds } },
-          select: { id: true, email: true, role: true },
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            staffMember: { select: { lastName: true, firstName: true, middleName: true } },
+          },
         })
       : [];
 
-    return events.map((event) => ({
-      ...event,
-      eventType: event.action,
-      actor: actors.find((a) => a.id === event.actorUserId) ?? null,
-      actorEmail: actors.find((a) => a.id === event.actorUserId)?.email ?? null,
-      payload: event.metadata,
-    }));
+    return events.map((event) => {
+      const actor = actors.find((a) => a.id === event.actorUserId) ?? null;
+      return {
+        ...event,
+        eventType: event.action,
+        actor,
+        actorEmail: actor?.email ?? null,
+        actorName: actorName(actor),
+        payload: event.metadata,
+      };
+    });
   }
 
   @Get(':id')
@@ -52,10 +77,21 @@ export class AuditController {
     const actor = event.actorUserId
       ? await this.prisma.user.findUnique({
           where: { id: event.actorUserId },
-          select: { id: true, email: true, role: true },
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            staffMember: { select: { lastName: true, firstName: true, middleName: true } },
+          },
         })
       : null;
-    return { ...event, eventType: event.action, actor, payload: event.metadata };
+    return {
+      ...event,
+      eventType: event.action,
+      actor,
+      actorName: actorName(actor),
+      payload: event.metadata,
+    };
   }
 }
 
