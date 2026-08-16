@@ -41,6 +41,24 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   return data.user;
 }
 
+export async function registerAccount(payload: Record<string, unknown>): Promise<AuthUser> {
+  const res = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? 'Не удалось зарегистрироваться');
+  }
+
+  const data = (await res.json()) as { accessToken: string; user: AuthUser };
+  setStoredToken(data.accessToken);
+  return data.user;
+}
+
 export async function logout(): Promise<void> {
   clearStoredToken();
   await fetch('/api/auth/logout', { method: 'POST' });

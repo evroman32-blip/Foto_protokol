@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server';
 
-import { authApi } from '@/lib/api';
+import { ApiError, authApi } from '@/lib/api';
 import { AUTH_COOKIE } from '@/lib/constants';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
-    const { email, password } = (await request.json()) as { email: string; password: string };
-    const data = await authApi.login(email, password);
+    const body = await request.json();
+    const data = await authApi.register(body);
 
     const response = NextResponse.json(data);
-    // secure только для HTTPS: иначе cookie не сохранится на демо по http://IP
     const secure =
       process.env.AUTH_COOKIE_SECURE === 'true' ||
       (process.env.WEB_URL ?? process.env.NEXT_PUBLIC_WEB_URL ?? '').startsWith('https://');
@@ -26,7 +25,8 @@ export async function POST(request: Request) {
 
     return response;
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Ошибка входа';
-    return NextResponse.json({ message }, { status: 401 });
+    const message = err instanceof Error ? err.message : 'Не удалось зарегистрироваться';
+    const status = err instanceof ApiError ? err.status : 400;
+    return NextResponse.json({ message }, { status: status >= 400 ? status : 400 });
   }
 }

@@ -31,6 +31,90 @@ export enum ParticipantRole {
   DENTAL_TECHNICIAN = 'DENTAL_TECHNICIAN',
 }
 
+/** Клинические роли на карточке сотрудника (назначает только администратор). */
+export enum StaffClinicalRole {
+  CONSULTING_DOCTOR = 'CONSULTING_DOCTOR',
+  ORTHOPEDIST = 'ORTHOPEDIST',
+  SURGEON_DENTIST = 'SURGEON_DENTIST',
+  DENTAL_TECHNICIAN = 'DENTAL_TECHNICIAN',
+  ANESTHESIOLOGIST = 'ANESTHESIOLOGIST',
+  ENT_SURGEON = 'ENT_SURGEON',
+}
+
+export const STAFF_CLINICAL_ROLE_LABELS: Record<StaffClinicalRole, string> = {
+  [StaffClinicalRole.CONSULTING_DOCTOR]: 'Консультирующий врач',
+  [StaffClinicalRole.ORTHOPEDIST]: 'Ортопед',
+  [StaffClinicalRole.SURGEON_DENTIST]: 'Стоматолог-хирург',
+  [StaffClinicalRole.DENTAL_TECHNICIAN]: 'Зубной техник',
+  [StaffClinicalRole.ANESTHESIOLOGIST]: 'Анестезиолог',
+  [StaffClinicalRole.ENT_SURGEON]: 'ЛОР-хирург',
+};
+
+export const JOB_TITLES = [
+  'Генеральный директор',
+  'Исполнительный директор',
+  'Управляющий филиалом',
+  'Администратор',
+  'Главный врач',
+  'Врач стоматолог',
+  'Зубной техник',
+  'Гигиенист',
+  'Врач',
+  'Ассистент',
+] as const;
+
+export type JobTitle = (typeof JOB_TITLES)[number];
+
+export const JOB_TITLES_REQUIRING_SPECIALIZATION: readonly JobTitle[] = [
+  'Главный врач',
+  'Врач стоматолог',
+  'Зубной техник',
+  'Гигиенист',
+  'Врач',
+  'Ассистент',
+];
+
+export const SPECIALIZATIONS = [
+  'Стоматология',
+  'ЧЛХ',
+  'Хирургия',
+  'Ортопедия',
+  'Гигиена ПР',
+  'ЛОР',
+  'Анестезиология',
+] as const;
+
+export type Specialization = (typeof SPECIALIZATIONS)[number];
+
+export function jobTitleRequiresSpecialization(position: string): boolean {
+  return (JOB_TITLES_REQUIRING_SPECIALIZATION as readonly string[]).includes(position);
+}
+
+export function requestedRoleFromJob(position: string, specialization?: string | null): UserRole {
+  switch (position) {
+    case 'Генеральный директор':
+    case 'Исполнительный директор':
+    case 'Управляющий филиалом':
+    case 'Администратор':
+      return UserRole.ORTHOPEDIC_MANAGER;
+    case 'Главный врач':
+      return UserRole.CHIEF_DOCTOR;
+    case 'Зубной техник':
+      return UserRole.DENTAL_TECHNICIAN;
+    case 'Гигиенист':
+    case 'Ассистент':
+      return UserRole.ASSISTANT;
+    case 'Врач стоматолог':
+    case 'Врач':
+      if (specialization === 'Хирургия' || specialization === 'ЧЛХ') return UserRole.SURGEON;
+      if (specialization === 'Ортопедия') return UserRole.ORTHOPEDIST;
+      if (specialization === 'Гигиена ПР') return UserRole.ASSISTANT;
+      return UserRole.CONSULTING_DOCTOR;
+    default:
+      return UserRole.EXPERT;
+  }
+}
+
 export enum StageCode {
   PRE_OPERATION = 'PRE_OPERATION',
   POSTOP_SURGICAL_RADIOLOGY_CONTROL = 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',

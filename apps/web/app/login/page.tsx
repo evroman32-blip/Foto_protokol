@@ -20,7 +20,7 @@ function LoginForm() {
     setLoading(true);
     try {
       await login(email, password);
-      const from = searchParams.get('from') ?? '/dashboard';
+      const from = searchParams.get('from') ?? '/home';
       router.push(from);
       router.refresh();
     } catch (err) {
@@ -81,6 +81,11 @@ function LoginForm() {
             Нет аккаунта?{' '}
             <a href="/register" className="text-accent hover:underline">
               Регистрация
+            </a>
+          </p>
+          <p className="text-center text-sm text-gray-600">
+            <a href="/home" className="text-accent hover:underline">
+              На главную
             </a>
           </p>
         </form>

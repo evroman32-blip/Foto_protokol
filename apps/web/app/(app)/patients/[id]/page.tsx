@@ -7,6 +7,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState, LoadingState } from '@/components/States';
 import { patientsApi, type PatientDto } from '@/lib/api';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 function formatPatient(p: PatientDto) {
   return [p.lastName, p.firstName, p.middleName].filter(Boolean).join(' ');
@@ -15,10 +16,12 @@ function formatPatient(p: PatientDto) {
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { isSiteAdmin } = useCurrentUser();
   const [patient, setPatient] = useState<PatientDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -60,12 +63,21 @@ export default function PatientDetailPage() {
   }
 
   async function handleDelete() {
-    if (!confirm('Удалить пациента?')) return;
+    if (
+      !confirm(
+        'Удалить карточку пациента? Если пациент участвует в клиническом случае, удаление будет запрещено.',
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
     try {
       await patientsApi.remove(id);
       router.push('/patients');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления');
+      setError(err instanceof Error ? err.message : 'Не удалось удалить карточку');
+      setDeleting(false);
     }
   }
 
@@ -78,14 +90,16 @@ export default function PatientDetailPage() {
       <PageHeader
         title={formatPatient(patient)}
         actions={
-          <>
+          <div className="flex gap-2">
             <Link href="/patients" className="btn-secondary">
               К списку
             </Link>
-            <button type="button" onClick={handleDelete} className="btn-danger">
-              Удалить
-            </button>
-          </>
+            {isSiteAdmin ? (
+              <button type="button" className="btn-danger" disabled={deleting} onClick={() => void handleDelete()}>
+                {deleting ? 'Удаление…' : 'Удалить'}
+              </button>
+            ) : null}
+          </div>
         }
       />
 

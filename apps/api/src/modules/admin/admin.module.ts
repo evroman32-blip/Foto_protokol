@@ -292,6 +292,8 @@ export class AdminController {
       lastName: user.staffMember?.lastName ?? '',
       firstName: user.staffMember?.firstName ?? '',
       middleName: user.staffMember?.middleName ?? null,
+      position: user.staffMember?.position ?? null,
+      specialization: user.staffMember?.specialization ?? null,
     }));
   }
 

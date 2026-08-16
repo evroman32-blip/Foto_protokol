@@ -6,23 +6,28 @@ import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '@/components/States';
 import { staffApi, type StaffDto } from '@/lib/api';
-import { PARTICIPANT_ROLE_LABELS } from '@/lib/constants';
+import { STAFF_CLINICAL_ROLE_LABELS } from '@/lib/constants';
+import { compareFioRu } from '@/lib/sort-fio';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 function formatStaff(s: StaffDto) {
   return [s.lastName, s.firstName, s.middleName].filter(Boolean).join(' ');
 }
 
 export default function StaffPage() {
+  const { canEditStaff, isSiteAdmin } = useCurrentUser();
   const [staff, setStaff] = useState<StaffDto[]>([]);
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function load(search?: string) {
     setLoading(true);
     setError(null);
     try {
-      setStaff(await staffApi.list(search ? { q: search } : undefined));
+      const rows = await staffApi.list(search ? { q: search } : undefined);
+      setStaff([...rows].sort(compareFioRu));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
     } finally {
@@ -34,15 +39,37 @@ export default function StaffPage() {
     void load();
   }, []);
 
+  async function handleDelete(id: string) {
+    if (
+      !confirm(
+        'Удалить карточку сотрудника? Если сотрудник участвует в клиническом случае, удаление будет запрещено.',
+      )
+    ) {
+      return;
+    }
+    setDeletingId(id);
+    setError(null);
+    try {
+      await staffApi.remove(id);
+      await load(q);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить карточку');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Сотрудники"
         description="Участники клинических случаев"
         actions={
-          <Link href="/staff/new" className="btn-primary">
-            Добавить сотрудника
-          </Link>
+          canEditStaff ? (
+            <Link href="/staff/new" className="btn-primary">
+              Добавить сотрудника
+            </Link>
+          ) : undefined
         }
       />
 
@@ -73,25 +100,34 @@ export default function StaffPage() {
                 <th>Должность</th>
                 <th>Специализация</th>
                 <th>Роли</th>
-                <th />
+                {isSiteAdmin ? <th /> : null}
               </tr>
             </thead>
             <tbody>
               {staff.map((s) => (
                 <tr key={s.id}>
-                  <td className="font-medium">{formatStaff(s)}</td>
+                  <td className="font-medium">
+                    <Link href={`/staff/${s.id}`}>{formatStaff(s)}</Link>
+                  </td>
                   <td>{s.position ?? '—'}</td>
                   <td>{s.specialization ?? '—'}</td>
                   <td>
-                    {(s.roles ?? [])
-                      .map((r) => PARTICIPANT_ROLE_LABELS[r] ?? r)
+                    {(s.clinicalRoles ?? s.roles ?? [])
+                      .map((r) => STAFF_CLINICAL_ROLE_LABELS[r as keyof typeof STAFF_CLINICAL_ROLE_LABELS] ?? r)
                       .join(', ') || '—'}
                   </td>
-                  <td>
-                    <Link href={`/staff/${s.id}`} className="text-sm">
-                      Открыть
-                    </Link>
-                  </td>
+                  {isSiteAdmin ? (
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-danger !px-3 !py-1 text-xs"
+                        disabled={deletingId === s.id}
+                        onClick={() => void handleDelete(s.id)}
+                      >
+                        {deletingId === s.id ? 'Удаление…' : 'Удалить'}
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

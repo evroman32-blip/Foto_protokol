@@ -1,69 +1,108 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
-import { BRAND, USER_ROLE_LABELS, ACCENT_COLORS } from '@/lib/constants';
+import {
+  BRAND,
+  ACCENT_COLORS,
+  JOB_TITLES,
+  JOB_TITLES_REQUIRING_SPECIALIZATION,
+  SPECIALIZATIONS,
+  jobTitleRequiresSpecialization,
+} from '@/lib/constants';
 import { authApi } from '@/lib/api';
-import { setStoredToken } from '@/lib/auth';
+import { getStoredToken, registerAccount } from '@/lib/auth';
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [lastName, setLastName] = useState('');
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [isExpert, setIsExpert] = useState(false);
+  const [position, setPosition] = useState('');
+  const [specialization, setSpecialization] = useState('');
   const [password, setPassword] = useState('');
-  const [requestedRole, setRequestedRole] = useState('EXPERT');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [accentColor, setAccentColor] = useState('#e85d04');
-  const [roles, setRoles] = useState<{ value: string; label: string }[]>(
-    Object.entries(USER_ROLE_LABELS)
-      .filter(([value]) => value !== 'SYSTEM_ADMIN' && value !== 'AUDITOR')
-      .map(([value, label]) => ({ value, label })),
-  );
+  const [jobTitles, setJobTitles] = useState<string[]>([...JOB_TITLES]);
+  const [specializations, setSpecializations] = useState<string[]>([...SPECIALIZATIONS]);
   const [colors, setColors] = useState<string[]>([...ACCENT_COLORS]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const showSpecialization = !isExpert && Boolean(position) && jobTitleRequiresSpecialization(position);
+  const passwordsMismatch =
+    password.length > 0 && passwordConfirm.length > 0 && password !== passwordConfirm;
+
+  const needsSpecializationList = useMemo(
+    () => new Set<string>(JOB_TITLES_REQUIRING_SPECIALIZATION),
+    [],
+  );
+
+  useEffect(() => {
+    if (getStoredToken()) {
+      window.location.replace('/home');
+    }
+  }, []);
 
   useEffect(() => {
     void authApi
       .registerOptions()
       .then((opts) => {
-        setRoles(opts.roles);
+        if (opts.jobTitles?.length) setJobTitles(opts.jobTitles);
+        if (opts.specializations?.length) setSpecializations(opts.specializations);
         setColors(opts.accentColors);
         if (opts.accentColors[0]) setAccentColor(opts.accentColors[0]);
       })
       .catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    if (!position || !needsSpecializationList.has(position)) {
+      setSpecialization('');
+    }
+  }, [position, needsSpecializationList]);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (password !== passwordConfirm) {
+      setError('Пароли не совпадают, необходим повторный ввод');
+      return;
+    }
+    if (!isExpert && !position) {
+      setError('Выберите должность');
+      return;
+    }
+    if (!isExpert && jobTitleRequiresSpecialization(position) && !specialization) {
+      setError('Выберите специализацию');
+      return;
+    }
     setLoading(true);
     try {
-      const data = await authApi.register({
+      await registerAccount({
         lastName,
         firstName,
         middleName: middleName || undefined,
         phone,
         email,
         password,
-        requestedRole,
+        passwordConfirm,
+        isExpert,
+        position: isExpert ? undefined : position,
+        specialization: isExpert || !showSpecialization ? undefined : specialization,
         accentColor,
       });
-      setStoredToken(data.accessToken);
-      await fetch('/api/auth/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: data.accessToken }),
-      });
-      router.push('/dashboard');
-      router.refresh();
+      window.location.replace('/home');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось зарегистрироваться');
-    } finally {
+      const message = err instanceof Error ? err.message : 'Не удалось зарегистрироваться';
+      if (getStoredToken() && message.includes('уже зарегистрирован')) {
+        window.location.replace('/home');
+        return;
+      }
+      setError(message);
       setLoading(false);
     }
   }
@@ -79,8 +118,8 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="card space-y-4">
           <h2 className="text-lg font-semibold">Регистрация аккаунта</h2>
           <p className="text-sm text-gray-600">
-            После регистрации вы сразу можете войти в режиме просмотра. Запрошенный статус
-            включит администратор или главный врач.
+            Сотрудники клиники получают рабочие права после подтверждения модератором.
+            Статус Эксперта подтверждения не требует и даёт только просмотр.
           </p>
 
           {error ? <div className="alert-error">{error}</div> : null}
@@ -153,6 +192,66 @@ export default function RegisterPage() {
           </div>
 
           <div>
+            <div className="label-field">Эксперт</div>
+            <label htmlFor="isExpert" className="mt-2 flex items-start gap-3 text-sm text-graphite">
+              <input
+                id="isExpert"
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-accent"
+                checked={isExpert}
+                onChange={(e) => setIsExpert(e.target.checked)}
+              />
+              <span>Если Вы не являетесь сотрудником клиники Мандарин, выберите статус Эксперта.</span>
+            </label>
+          </div>
+
+          {!isExpert ? (
+            <>
+              <div>
+                <label className="label-field" htmlFor="position">
+                  Должность
+                </label>
+                <select
+                  id="position"
+                  required
+                  className="input-field"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                >
+                  <option value="">Выберите должность</option>
+                  {jobTitles.map((title) => (
+                    <option key={title} value={title}>
+                      {title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {showSpecialization ? (
+                <div>
+                  <label className="label-field" htmlFor="specialization">
+                    Специализация
+                  </label>
+                  <select
+                    id="specialization"
+                    required
+                    className="input-field"
+                    value={specialization}
+                    onChange={(e) => setSpecialization(e.target.value)}
+                  >
+                    <option value="">Выберите специализацию</option>
+                    {specializations.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          <div>
             <label className="label-field" htmlFor="password">
               Пароль
             </label>
@@ -168,25 +267,27 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="label-field" htmlFor="role">
-              Статус
+            <label className="label-field" htmlFor="passwordConfirm">
+              Подтверждение пароля
             </label>
-            <select
-              id="role"
+            <input
+              id="passwordConfirm"
+              required
+              type="password"
+              minLength={8}
               className="input-field"
-              value={requestedRole}
-              onChange={(e) => setRequestedRole(e.target.value)}
-            >
-              {roles.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+              value={passwordConfirm}
+              onChange={(e) => setPasswordConfirm(e.target.value)}
+            />
+            {passwordsMismatch ? (
+              <p className="mt-1 text-sm text-status-danger">
+                Пароли не совпадают, необходим повторный ввод
+              </p>
+            ) : null}
           </div>
 
           <div>
-            <div className="label-field">Цвет кнопки аккаунта</div>
+            <div className="label-field">Цвет логотипа Вашего аккаунта</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {colors.map((c) => (
                 <button
@@ -203,7 +304,7 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          <button type="submit" disabled={loading} className="btn-primary w-full">
+          <button type="submit" disabled={loading || passwordsMismatch} className="btn-primary w-full">
             {loading ? 'Регистрация…' : 'Создать аккаунт'}
           </button>
 
@@ -211,6 +312,11 @@ export default function RegisterPage() {
             Уже есть аккаунт?{' '}
             <Link href="/login" className="text-accent hover:underline">
               Войти
+            </Link>
+          </p>
+          <p className="text-center text-sm text-gray-600">
+            <Link href="/home" className="text-accent hover:underline">
+              На главную
             </Link>
           </p>
         </form>

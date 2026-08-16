@@ -1,12 +1,24 @@
 export const AUTH_TOKEN_KEY = 'mandarin_auth_token';
 export const AUTH_COOKIE = 'mandarin_auth_token';
 
+function cleanApiBase(value: string | undefined, fallback: string): string {
+  const raw = (value ?? '').replace(/[\u0000-\u001F]+/g, '').trim().replace(/\/+$/, '');
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw);
+    if (url.hostname === 'localhost') url.hostname = '127.0.0.1';
+    return url.origin;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Browser: NEXT_PUBLIC_API_URL (can be same-origin ''). Server: API_URL → Nest. */
 export const API_BASE = (
-  (typeof window === 'undefined'
-    ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL
-    : process.env.NEXT_PUBLIC_API_URL) ?? 'http://localhost:3001'
-).replace(/\/$/, '');
+  typeof window === 'undefined'
+    ? cleanApiBase(process.env.API_URL || process.env.NEXT_PUBLIC_API_URL, 'http://127.0.0.1:3001')
+    : cleanApiBase(process.env.NEXT_PUBLIC_API_URL, 'http://127.0.0.1:3001')
+);
 
 export const BRAND = {
   title: 'Mandarin PhotoProtocol',
@@ -55,6 +67,15 @@ export const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
   SURGEON: 'Хирург',
   DENTAL_TECHNICIAN: 'Зубной техник',
 };
+
+export {
+  JOB_TITLES,
+  JOB_TITLES_REQUIRING_SPECIALIZATION,
+  SPECIALIZATIONS,
+  STAFF_CLINICAL_ROLE_LABELS,
+  StaffClinicalRole,
+  jobTitleRequiresSpecialization,
+} from '@mandarin/contracts';
 
 export const USER_ROLE_LABELS: Record<string, string> = {
   SYSTEM_ADMIN: 'Администратор',

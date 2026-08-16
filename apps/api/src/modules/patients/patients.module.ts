@@ -1,8 +1,12 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
+  Delete,
+  ForbiddenException,
   Get,
+  Module,
   Param,
   Patch,
   Post,
@@ -11,11 +15,12 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { PatientSex } from '@mandarin/contracts';
+import { PatientSex, UserRole } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
 import { BranchAccessGuard } from '../../common/guards/branch-access.guard';
-import { AuditAction } from '../../common/decorators/metadata.decorators';
-import { Module } from '@nestjs/common';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { AuditAction, Roles } from '../../common/decorators/metadata.decorators';
+import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 
 class CreatePatientDto {
   /** Номер карты / локальный номер пациента */
@@ -130,7 +135,7 @@ export class PatientsController {
             ]
           : undefined,
       },
-      orderBy: { lastName: 'asc' },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }, { middleName: 'asc' }],
       take: 100,
     });
     return rows.map(mapPatient);
@@ -188,6 +193,27 @@ export class PatientsController {
       },
     });
     return mapPatient(updated);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SYSTEM_ADMIN)
+  @AuditAction('patient.delete')
+  async remove(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    if (actor.role !== UserRole.SYSTEM_ADMIN) {
+      throw new ForbiddenException('Удалять карточки может только администратор сайта');
+    }
+    const patient = await this.prisma.patient.findUniqueOrThrow({
+      where: { id },
+      include: { _count: { select: { cases: true } } },
+    });
+    if (patient._count.cases > 0) {
+      throw new ConflictException(
+        'Нельзя удалить карточку пациента: пациент участвует в клиническом случае. Сначала удалите случай.',
+      );
+    }
+    await this.prisma.patient.delete({ where: { id } });
+    return { success: true };
   }
 }
 

@@ -54,8 +54,12 @@ docker compose -f docker-compose.demo.yml --env-file .env.demo exec -T api \
 
 echo ""
 echo "========================================"
-echo " Демо доступно:  http://${PUBLIC_HOST}"
-echo " Логин:          admin@example.local"
-echo " Пароль:         ${DEMO_PASSWORD:-см. .env.demo / seed}"
+echo " Сервис:  http://${PUBLIC_HOST}"
+if [ -n "${BOOTSTRAP_ADMIN_EMAIL:-}" ]; then
+  echo " Модератор: ${BOOTSTRAP_ADMIN_EMAIL}"
+  echo " Пароль:    из .env.demo (BOOTSTRAP_ADMIN_PASSWORD)"
+else
+  echo " Зарегистрируйтесь на главной, затем подтвердите первого модератора в БД."
+fi
 echo "========================================"
-echo " Логи: docker compose -f docker-compose.demo.yml logs -f"
+echo " Логи: docker compose -f docker-compose.demo.yml --env-file .env.demo logs -f"

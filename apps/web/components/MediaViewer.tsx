@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { ObjViewer } from '@/components/ObjViewer';
 import { StlViewer } from '@/components/StlViewer';
@@ -52,6 +52,7 @@ export function MediaViewer({ assets, initialIndex, onClose }: MediaViewerProps)
   const [displayUrl, setDisplayUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const mediaFallback = useRef(0);
 
   useEffect(() => {
     setIndex(initialIndex);
@@ -76,18 +77,14 @@ export function MediaViewer({ assets, initialIndex, onClose }: MediaViewerProps)
         setView(data);
 
         const fileName = data.originalFileName ?? asset.originalFileName;
-        // Фото/видео/PDF: браузер грузит сам по same-origin URL (cookie + стрим API).
-        // Это быстрее, чем скачивать весь файл в JS через fetch+blob.
+        // Фото/видео/PDF: same-origin /api/v1/... (cookie → Next rewrite → Nest → MinIO).
         if (
           isImage(data.mimeType, data.mediaType) ||
           isVideo(data.mimeType, data.mediaType) ||
           isPdf(data.mimeType, data.mediaType)
         ) {
-          const path =
-            isImage(data.mimeType, data.mediaType)
-              ? data.previewPath ?? `/api/v1/media/${asset.id}/content?variant=preview`
-              : data.contentPath ?? `/api/v1/media/${asset.id}/content`;
-          setDisplayUrl(path);
+          mediaFallback.current = 0;
+          setDisplayUrl(data.contentPath || data.url || `/api/v1/media/${asset.id}/content`);
           return;
         }
 
@@ -136,7 +133,25 @@ export function MediaViewer({ assets, initialIndex, onClose }: MediaViewerProps)
   const mime = view?.mimeType;
   const mediaType = view?.mediaType ?? asset.mediaType;
   const src = displayUrl;
-  const fullContentSrc = view?.contentPath ?? `/api/v1/media/${asset.id}/content`;
+  const fullContentSrc = view?.contentPath || view?.url || `/api/v1/media/${asset.id}/content`;
+
+  async function handleMediaError() {
+    if (!asset || !view) return;
+    if (mediaFallback.current === 0 && view.url && src !== view.url) {
+      mediaFallback.current = 1;
+      setDisplayUrl(view.url);
+      return;
+    }
+    if (mediaFallback.current >= 2) return;
+    mediaFallback.current = 2;
+    try {
+      const buffer = await mediaApi.fetchContent(asset.id);
+      const blob = new Blob([buffer], { type: view.mimeType || 'application/octet-stream' });
+      setDisplayUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось открыть файл');
+    }
+  }
 
   return (
     <div
@@ -180,15 +195,19 @@ export function MediaViewer({ assets, initialIndex, onClose }: MediaViewerProps)
                 src={src}
                 alt={title}
                 className="max-h-[70vh] max-w-full object-contain"
-                onError={(e) => {
-                  // нет превью → оригинал
-                  if (e.currentTarget.src.includes('variant=preview')) {
-                    e.currentTarget.src = fullContentSrc;
-                  }
+                onError={() => {
+                  void handleMediaError();
                 }}
               />
             ) : isVideo(mime, mediaType) ? (
-              <video src={src} controls className="max-h-[70vh] max-w-full" />
+              <video
+                src={src}
+                controls
+                className="max-h-[70vh] max-w-full"
+                onError={() => {
+                  void handleMediaError();
+                }}
+              />
             ) : isPdf(mime, mediaType) ? (
               <iframe title={title} src={src} className="h-[70vh] w-full rounded border border-border" />
             ) : (

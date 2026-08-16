@@ -1,11 +1,24 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsArray, IsDateString, IsEnum, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CaseStatus, JawScope, ParticipantRole } from '@mandarin/contracts';
+import { CaseStatus, JawScope, ParticipantRole, UserRole } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
-import { AuditAction } from '../../common/decorators/metadata.decorators';
+import { AuditAction, Roles } from '../../common/decorators/metadata.decorators';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { Module } from '@nestjs/common';
 import { StagesModule } from '../stages/stages.module';
 import { StageTemplateSyncService } from '../stages/stage-template-sync.service';
@@ -114,7 +127,7 @@ export class CasesController {
           orderBy: { stageTemplate: { sortOrder: 'asc' } },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ patient: { lastName: 'asc' } }, { patient: { firstName: 'asc' } }, { patient: { middleName: 'asc' } }],
     });
     return rows.map(mapCase);
   }
@@ -254,6 +267,72 @@ export class CasesController {
       },
       include: { staffMember: true },
     });
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.SYSTEM_ADMIN)
+  @AuditAction('case.delete')
+  async remove(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    if (actor.role !== UserRole.SYSTEM_ADMIN) {
+      throw new ForbiddenException('Удалять случаи может только администратор сайта');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const stages = await tx.stageInstance.findMany({
+        where: { clinicalCaseId: id },
+        select: { id: true },
+      });
+      const stageIds = stages.map((s) => s.id);
+      const media = stageIds.length
+        ? await tx.mediaAsset.findMany({
+            where: { stageInstanceId: { in: stageIds } },
+            select: { id: true },
+          })
+        : [];
+      const mediaIds = media.map((m) => m.id);
+      const implants = await tx.surgicalImplantRecord.findMany({
+        where: { clinicalCaseId: id },
+        select: { id: true },
+      });
+      const implantIds = implants.map((i) => i.id);
+      const batches = stageIds.length
+        ? await tx.uploadBatch.findMany({
+            where: { stageInstanceId: { in: stageIds } },
+            select: { id: true },
+          })
+        : [];
+      const batchIds = batches.map((b) => b.id);
+
+      if (implantIds.length) {
+        await tx.implantRadiologyAttachment.deleteMany({
+          where: { surgicalImplantRecordId: { in: implantIds } },
+        });
+      }
+      await tx.surgicalImplantRecord.deleteMany({ where: { clinicalCaseId: id } });
+      await tx.radiologyStudy.deleteMany({ where: { clinicalCaseId: id } });
+      if (mediaIds.length) {
+        await tx.mediaAssignment.deleteMany({ where: { mediaAssetId: { in: mediaIds } } });
+        await tx.mediaDerivative.deleteMany({ where: { mediaAssetId: { in: mediaIds } } });
+        await tx.mediaMetadata.deleteMany({ where: { mediaAssetId: { in: mediaIds } } });
+        await tx.mediaAsset.deleteMany({ where: { id: { in: mediaIds } } });
+      }
+      if (batchIds.length) {
+        await tx.uploadChunk.deleteMany({ where: { uploadBatchId: { in: batchIds } } });
+      }
+      if (stageIds.length) {
+        await tx.uploadBatch.deleteMany({ where: { stageInstanceId: { in: stageIds } } });
+        await tx.requirementInstance.deleteMany({ where: { stageInstanceId: { in: stageIds } } });
+        await tx.surgeonRadiologyConfirmation.deleteMany({ where: { stageInstanceId: { in: stageIds } } });
+        await tx.doctorConfirmation.deleteMany({ where: { stageInstanceId: { in: stageIds } } });
+        await tx.stageClosure.deleteMany({ where: { stageInstanceId: { in: stageIds } } });
+        await tx.emergencyEvent.deleteMany({ where: { stageInstanceId: { in: stageIds } } });
+      }
+      await tx.generatedReport.deleteMany({ where: { clinicalCaseId: id } });
+      await tx.caseParticipant.deleteMany({ where: { clinicalCaseId: id } });
+      await tx.stageInstance.deleteMany({ where: { clinicalCaseId: id } });
+      await tx.clinicalCase.delete({ where: { id } });
+    }, { timeout: 60_000 });
+    return { success: true };
   }
 }
 

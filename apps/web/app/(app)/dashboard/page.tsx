@@ -7,13 +7,24 @@ import { PageHeader } from '@/components/PageHeader';
 import { EmptyState, ErrorState, LoadingState } from '@/components/States';
 import { casesApi, type ClinicalCaseDto } from '@/lib/api';
 import { CASE_STATUS_LABELS, JAW_SCOPE_LABELS } from '@/lib/constants';
+import { compareFioRu } from '@/lib/sort-fio';
 import { useCurrentUser } from '@/lib/use-current-user';
 
 function patientName(p: ClinicalCaseDto['patient']) {
   return [p.lastName, p.firstName, p.middleName].filter(Boolean).join(' ');
 }
 
-function CaseRow({ c }: { c: ClinicalCaseDto }) {
+function CaseRow({
+  c,
+  canDelete,
+  deleting,
+  onDelete,
+}: {
+  c: ClinicalCaseDto;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: (id: string) => void;
+}) {
   const stages = c.stageInstances ?? [];
   const warnings = stages.flatMap((s) => s.completeness?.warnings ?? []);
   const blockers = stages.flatMap((s) => s.completeness?.blockingReasons ?? []);
@@ -53,26 +64,37 @@ function CaseRow({ c }: { c: ClinicalCaseDto }) {
           <span className="text-xs text-status-success">Комплектность в норме</span>
         )}
       </td>
-      <td>
-        <Link href={`/cases/${c.id}`} className="text-sm">
-          Открыть
-        </Link>
-      </td>
+      {canDelete ? (
+        <td>
+          <button
+            type="button"
+            className="btn-danger !px-3 !py-1 text-xs"
+            disabled={deleting}
+            onClick={() => onDelete(c.id)}
+          >
+            Удалить
+          </button>
+        </td>
+      ) : null}
     </tr>
   );
 }
 
 export default function DashboardPage() {
-  const { isReadOnly } = useCurrentUser();
+  const { isReadOnly, isSiteAdmin } = useCurrentUser();
   const [cases, setCases] = useState<ClinicalCaseDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      setCases(await casesApi.list());
+      const rows = await casesApi.list();
+      setCases(
+        [...rows].sort((a, b) => compareFioRu(a.patient, b.patient)),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить случаи');
     } finally {
@@ -83,6 +105,26 @@ export default function DashboardPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  async function handleDelete(id: string) {
+    if (
+      !confirm(
+        'Удалить клинический случай? После удаления карточки пациента и сотрудников можно будет удалить, если они больше не участвуют в других случаях.',
+      )
+    ) {
+      return;
+    }
+    setDeletingId(id);
+    setError(null);
+    try {
+      await casesApi.remove(id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить случай');
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div>
@@ -124,12 +166,18 @@ export default function DashboardPage() {
                 <th>Статус</th>
                 <th>Начало лечения</th>
                 <th>Комплектность</th>
-                <th />
+                {isSiteAdmin ? <th /> : null}
               </tr>
             </thead>
             <tbody>
               {cases.map((c) => (
-                <CaseRow key={c.id} c={c} />
+                <CaseRow
+                  key={c.id}
+                  c={c}
+                  canDelete={Boolean(isSiteAdmin)}
+                  deleting={deletingId === c.id}
+                  onDelete={(id) => void handleDelete(id)}
+                />
               ))}
             </tbody>
           </table>

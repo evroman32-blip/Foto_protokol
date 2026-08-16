@@ -263,6 +263,7 @@ model StaffMember {
   middleName     String?
   position       String
   specialization String?
+  clinicalRoles  String[]  @default([])
   branchId       String?
   branch         Branch?   @relation(fields: [branchId], references: [id])
   isActive       Boolean   @default(true)

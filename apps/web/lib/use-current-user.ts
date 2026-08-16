@@ -2,15 +2,21 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import {
+  canCloseStage,
+  canCreateClinicalCase,
+  canEditClosedStage as canEditClosedStageByRole,
+  canEditStaffAndPatients,
+  isModeratorRole,
+} from '@mandarin/contracts';
+
 import { authApi, type AuthProfileDto } from './api';
+import { getStoredToken } from './auth';
 
 export type CurrentUser = AuthProfileDto;
 
-/** Роли, которым разрешено менять состав файлов уже закрытого этапа. */
-export const CLOSED_STAGE_EDITOR_ROLES = ['SYSTEM_ADMIN', 'CHIEF_DOCTOR'];
-
 export function canEditClosedStage(role: string | null | undefined): boolean {
-  return Boolean(role && CLOSED_STAGE_EDITOR_ROLES.includes(role));
+  return canEditClosedStageByRole(role);
 }
 
 export function isReadOnlyRole(role: string | null | undefined): boolean {
@@ -35,11 +41,19 @@ export function useCurrentUser() {
   }, []);
 
   useEffect(() => {
+    if (!getStoredToken()) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
     void reload();
   }, [reload]);
 
   const role = user?.role ?? null;
-  const readOnly = isReadOnlyRole(role);
+  const approved = user?.accountStatus === 'APPROVED';
+  const isExpert = role === 'EXPERT';
+  const readOnly = Boolean(user?.isReadOnly) || isReadOnlyRole(role) || !approved;
+  const isModerator = isModeratorRole(role);
 
   return {
     user,
@@ -47,7 +61,19 @@ export function useCurrentUser() {
     loading,
     reload,
     isReadOnly: readOnly,
-    canEditClosedStage: !readOnly && canEditClosedStage(role),
-    canApproveAccounts: role === 'SYSTEM_ADMIN' || role === 'CHIEF_DOCTOR',
+    isExpert,
+    canEditClosedStage: user?.canEditClosedStage ?? (!readOnly && canEditClosedStageByRole(role)),
+    canApproveAccounts: isModerator || role === 'CHIEF_DOCTOR',
+    canEditStaff: user?.canEditStaffAndPatients ?? (approved && canEditStaffAndPatients(role)),
+    canEditPatients: user?.canEditStaffAndPatients ?? (approved && canEditStaffAndPatients(role)),
+    canCreateCase:
+      user?.canCreateCase ?? (approved && canCreateClinicalCase(role, user?.position)),
+    canAssignAccountRole: isModerator,
+    canCloseStage: (startedByUserId?: string | null) =>
+      Boolean(user && canCloseStage(role, user.id, startedByUserId)),
+    canDelete: isModerator,
+    isSiteAdmin: isModerator,
+    isModerator,
+    canEditProfile: approved,
   };
 }

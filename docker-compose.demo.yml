@@ -89,7 +89,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       SESSION_SECRET: ${SESSION_SECRET}
       RUN_SEED_ON_START: ${RUN_SEED_ON_START:-true}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-DemoReview2026!}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       AI_PROVIDER: mock
     depends_on:
       postgres:
@@ -142,6 +143,7 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       API_URL: http://api:3001
+      WEB_URL: ${WEB_URL}
     depends_on:
       api:
         condition: service_healthy

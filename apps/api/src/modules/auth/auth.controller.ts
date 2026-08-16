@@ -2,14 +2,24 @@ import { Body, Controller, Get, Patch, Post, Res } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { FastifyReply } from 'fastify';
 import {
+  IsBoolean,
   IsEmail,
-  IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   Matches,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
-import { UserRole } from '@mandarin/contracts';
+import { Transform } from 'class-transformer';
+import {
+  JOB_TITLES,
+  JOB_TITLES_REQUIRING_SPECIALIZATION,
+  SPECIALIZATIONS,
+  STAFF_CLINICAL_ROLE_LABELS,
+  StaffClinicalRole,
+  jobTitleRequiresSpecialization,
+} from '@mandarin/contracts';
 import {
   AllowReadonlyMutation,
   AuditAction,
@@ -54,12 +64,27 @@ class RegisterDto {
   @IsEmail({}, { message: 'Некорректный email' })
   email!: string;
 
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  isExpert!: boolean;
+
+  @ValidateIf((dto: RegisterDto) => !dto.isExpert)
+  @IsIn([...JOB_TITLES], { message: 'Выберите должность из списка' })
+  position?: string;
+
+  @ValidateIf(
+    (dto: RegisterDto) => !dto.isExpert && Boolean(dto.position && jobTitleRequiresSpecialization(dto.position)),
+  )
+  @IsIn([...SPECIALIZATIONS], { message: 'Выберите специализацию из списка' })
+  specialization?: string;
+
   @IsString()
   @MinLength(8, { message: 'Пароль должен содержать минимум 8 символов' })
   password!: string;
 
-  @IsEnum(UserRole, { message: 'Выберите статус' })
-  requestedRole!: UserRole;
+  @IsString()
+  @MinLength(8, { message: 'Пароль должен содержать минимум 8 символов' })
+  passwordConfirm!: string;
 
   @IsString()
   @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'Некорректный цвет кнопки' })
@@ -107,6 +132,13 @@ export class AuthController {
   @Get('register-options')
   registerOptions() {
     return {
+      jobTitles: [...JOB_TITLES],
+      jobTitlesRequiringSpecialization: [...JOB_TITLES_REQUIRING_SPECIALIZATION],
+      specializations: [...SPECIALIZATIONS],
+      clinicalRoles: Object.values(StaffClinicalRole).map((value) => ({
+        value,
+        label: STAFF_CLINICAL_ROLE_LABELS[value],
+      })),
       roles: REGISTERABLE_ROLES.map((value) => ({
         value,
         label: USER_ROLE_LABELS[value],

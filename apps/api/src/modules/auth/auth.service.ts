@@ -1,12 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { UserAccountStatus, UserRole } from '@mandarin/contracts';
+import { UserAccountStatus, UserRole, requestedRoleFromJob, jobTitleRequiresSpecialization } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
@@ -63,7 +64,10 @@ export interface RegisterInput {
   phone: string;
   email: string;
   password: string;
-  requestedRole: UserRole;
+  passwordConfirm: string;
+  isExpert: boolean;
+  position?: string;
+  specialization?: string;
   accentColor: string;
 }
 
@@ -147,11 +151,28 @@ export class AuthService {
   }
 
   async register(dto: RegisterInput) {
-    if (!REGISTERABLE_ROLES.includes(dto.requestedRole)) {
-      throw new BadRequestException('Эту роль нельзя выбрать при регистрации');
+    if (dto.password !== dto.passwordConfirm) {
+      throw new BadRequestException('Пароли не совпадают, необходим повторный ввод');
     }
     if (!ACCENT_COLORS.includes(dto.accentColor as (typeof ACCENT_COLORS)[number])) {
       throw new BadRequestException('Выберите цвет кнопки аккаунта из палитры');
+    }
+
+    const isExpert = Boolean(dto.isExpert);
+    const position = isExpert ? 'Эксперт' : dto.position?.trim();
+    const specialization = isExpert ? null : dto.specialization?.trim() || null;
+    const requestedRole = isExpert
+      ? UserRole.EXPERT
+      : requestedRoleFromJob(position ?? '', specialization);
+
+    if (!isExpert && !position) {
+      throw new BadRequestException('Выберите должность');
+    }
+    if (!isExpert && position && jobTitleRequiresSpecialization(position) && !specialization) {
+      throw new BadRequestException('Выберите специализацию');
+    }
+    if (!REGISTERABLE_ROLES.includes(requestedRole)) {
+      throw new BadRequestException('Эту роль нельзя выбрать при регистрации');
     }
 
     const email = dto.email.trim().toLowerCase();
@@ -161,14 +182,14 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const position = USER_ROLE_LABELS[dto.requestedRole] ?? 'Сотрудник';
 
     const staff = await this.prisma.staffMember.create({
       data: {
         lastName: dto.lastName.trim(),
         firstName: dto.firstName.trim(),
         middleName: dto.middleName?.trim() || null,
-        position,
+        position: position || 'Сотрудник',
+        specialization,
       },
     });
 
@@ -178,8 +199,8 @@ export class AuthService {
         phone: dto.phone.trim(),
         passwordHash,
         role: UserRole.EXPERT,
-        requestedRole: dto.requestedRole,
-        accountStatus: UserAccountStatus.PENDING,
+        requestedRole,
+        accountStatus: isExpert ? UserAccountStatus.APPROVED : UserAccountStatus.PENDING,
         accentColor: dto.accentColor,
         staffMemberId: staff.id,
       },
@@ -193,7 +214,10 @@ export class AuthService {
       entityId: user.id,
       metadata: {
         email: user.email,
-        requestedRole: dto.requestedRole,
+        isExpert,
+        requestedRole,
+        position,
+        specialization,
       },
     });
 
@@ -223,6 +247,11 @@ export class AuthService {
       include: { staffMember: true },
     });
     if (!user) throw new UnauthorizedException('Пользователь не найден');
+    if (user.accountStatus !== UserAccountStatus.APPROVED) {
+      throw new ForbiddenException(
+        'Редактировать профиль можно после подтверждения прав администратором сайта.',
+      );
+    }
 
     if (dto.accentColor && !ACCENT_COLORS.includes(dto.accentColor as (typeof ACCENT_COLORS)[number])) {
       throw new BadRequestException('Выберите цвет кнопки аккаунта из палитры');
@@ -277,9 +306,12 @@ export class AuthService {
       firstName: string;
       middleName: string | null;
       position: string;
+      specialization?: string | null;
+      clinicalRoles?: string[];
       branch?: { id: string; name: string } | null;
     } | null;
   }) {
+    const approved = (user.accountStatus ?? 'APPROVED') === 'APPROVED';
     return {
       id: user.id,
       email: user.email,
@@ -299,8 +331,11 @@ export class AuthService {
       firstName: user.staffMember?.firstName ?? '',
       middleName: user.staffMember?.middleName ?? null,
       position: user.staffMember?.position ?? null,
+      specialization: user.staffMember?.specialization ?? null,
+      clinicalRoles: user.staffMember?.clinicalRoles ?? [],
       branch: user.staffMember?.branch ?? null,
-      isReadOnly: user.role === UserRole.EXPERT,
+      isReadOnly: user.role === UserRole.EXPERT || !approved,
+      canEditProfile: approved,
     };
   }
 }

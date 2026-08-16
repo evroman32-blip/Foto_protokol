@@ -1,15 +1,23 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState, LoadingState } from '@/components/States';
 import { staffApi, type StaffDto } from '@/lib/api';
-import { PARTICIPANT_ROLE_LABELS } from '@/lib/constants';
+import {
+  JOB_TITLES,
+  SPECIALIZATIONS,
+  STAFF_CLINICAL_ROLE_LABELS,
+  USER_ROLE_LABELS,
+  jobTitleRequiresSpecialization,
+} from '@/lib/constants';
+import { useCurrentUser } from '@/lib/use-current-user';
 
-const ROLE_OPTIONS = Object.entries(PARTICIPANT_ROLE_LABELS);
+const CLINICAL_ROLE_OPTIONS = Object.entries(STAFF_CLINICAL_ROLE_LABELS);
+const ACCOUNT_ROLE_OPTIONS = Object.entries(USER_ROLE_LABELS);
 
 function formatStaff(s: StaffDto) {
   return [s.lastName, s.firstName, s.middleName].filter(Boolean).join(' ');
@@ -17,11 +25,17 @@ function formatStaff(s: StaffDto) {
 
 export default function StaffDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const { canEditStaff, isSiteAdmin } = useCurrentUser();
   const [member, setMember] = useState<StaffDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [roles, setRoles] = useState<string[]>([]);
+  const [position, setPosition] = useState('');
+  const [specialization, setSpecialization] = useState('');
+  const [userRole, setUserRole] = useState('');
 
   async function load() {
     setLoading(true);
@@ -29,7 +43,10 @@ export default function StaffDetailPage() {
     try {
       const data = await staffApi.get(id);
       setMember(data);
-      setRoles(data.roles ?? []);
+      setRoles(data.clinicalRoles ?? data.roles ?? []);
+      setPosition(data.position ?? '');
+      setSpecialization(data.specialization ?? '');
+      setUserRole(data.user?.role ?? '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка загрузки');
     } finally {
@@ -41,13 +58,32 @@ export default function StaffDetailPage() {
     void load();
   }, [id]);
 
+  async function handleDelete() {
+    if (
+      !confirm(
+        'Удалить карточку сотрудника? Если сотрудник участвует в клиническом случае, удаление будет запрещено.',
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      await staffApi.remove(id);
+      router.push('/staff');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить карточку');
+      setDeleting(false);
+    }
+  }
+
   function toggleRole(role: string) {
     setRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!member) return;
+    if (!member || !canEditStaff) return;
     setSaving(true);
     const fd = new FormData(e.currentTarget);
     try {
@@ -55,9 +91,10 @@ export default function StaffDetailPage() {
         lastName: String(fd.get('lastName')),
         firstName: String(fd.get('firstName')),
         middleName: String(fd.get('middleName') || '') || undefined,
-        position: String(fd.get('position') || '') || undefined,
-        specialization: String(fd.get('specialization') || '') || undefined,
-        roles,
+        position,
+        specialization: jobTitleRequiresSpecialization(position) ? specialization || undefined : undefined,
+        clinicalRoles: roles,
+        userRole: userRole || undefined,
       });
       setMember(updated);
     } catch (err) {
@@ -71,18 +108,38 @@ export default function StaffDetailPage() {
   if (error && !member) return <ErrorState message={error} onRetry={load} />;
   if (!member) return null;
 
+  const showSpecialization = Boolean(position) && jobTitleRequiresSpecialization(position);
+  const positionOptions = JOB_TITLES.includes(position as (typeof JOB_TITLES)[number])
+    ? [...JOB_TITLES]
+    : position
+      ? [position, ...JOB_TITLES]
+      : [...JOB_TITLES];
+
   return (
     <div>
       <PageHeader
         title={formatStaff(member)}
         actions={
-          <Link href="/staff" className="btn-secondary">
-            К списку
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/staff" className="btn-secondary">
+              К списку
+            </Link>
+            {isSiteAdmin ? (
+              <button type="button" className="btn-danger" disabled={deleting} onClick={() => void handleDelete()}>
+                {deleting ? 'Удаление…' : 'Удалить'}
+              </button>
+            ) : null}
+          </div>
         }
       />
 
       {error ? <div className="alert-error mb-4">{error}</div> : null}
+      {!canEditStaff ? (
+        <div className="mb-4 rounded border border-border bg-surface-muted px-4 py-3 text-sm">
+          Карточку сотрудника может редактировать только администратор сайта, включая первичную
+          установку роли.
+        </div>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="card max-w-2xl space-y-4">
         <div className="grid gap-4 sm:grid-cols-3">
@@ -90,19 +147,39 @@ export default function StaffDetailPage() {
             <label className="label-field" htmlFor="lastName">
               Фамилия
             </label>
-            <input id="lastName" name="lastName" defaultValue={member.lastName} required className="input-field" />
+            <input
+              id="lastName"
+              name="lastName"
+              defaultValue={member.lastName}
+              required
+              disabled={!canEditStaff}
+              className="input-field"
+            />
           </div>
           <div>
             <label className="label-field" htmlFor="firstName">
               Имя
             </label>
-            <input id="firstName" name="firstName" defaultValue={member.firstName} required className="input-field" />
+            <input
+              id="firstName"
+              name="firstName"
+              defaultValue={member.firstName}
+              required
+              disabled={!canEditStaff}
+              className="input-field"
+            />
           </div>
           <div>
             <label className="label-field" htmlFor="middleName">
               Отчество
             </label>
-            <input id="middleName" name="middleName" defaultValue={member.middleName ?? ''} className="input-field" />
+            <input
+              id="middleName"
+              name="middleName"
+              defaultValue={member.middleName ?? ''}
+              disabled={!canEditStaff}
+              className="input-field"
+            />
           </div>
         </div>
 
@@ -111,36 +188,86 @@ export default function StaffDetailPage() {
             <label className="label-field" htmlFor="position">
               Должность
             </label>
-            <input id="position" name="position" defaultValue={member.position ?? ''} className="input-field" />
-          </div>
-          <div>
-            <label className="label-field" htmlFor="specialization">
-              Специализация
-            </label>
-            <input
-              id="specialization"
-              name="specialization"
-              defaultValue={member.specialization ?? ''}
+            <select
+              id="position"
               className="input-field"
-            />
+              disabled={!canEditStaff}
+              value={position}
+              onChange={(e) => setPosition(e.target.value)}
+            >
+              <option value="">Выберите должность</option>
+              {positionOptions.map((title) => (
+                <option key={title} value={title}>
+                  {title}
+                </option>
+              ))}
+            </select>
           </div>
+          {showSpecialization ? (
+            <div>
+              <label className="label-field" htmlFor="specialization">
+                Специализация
+              </label>
+              <select
+                id="specialization"
+                className="input-field"
+                disabled={!canEditStaff}
+                value={specialization}
+                onChange={(e) => setSpecialization(e.target.value)}
+              >
+                <option value="">Выберите специализацию</option>
+                {SPECIALIZATIONS.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </div>
 
         <div>
-          <span className="label-field">Роли в случаях</span>
+          <span className="label-field">Роли</span>
           <div className="mt-2 flex flex-wrap gap-3">
-            {ROLE_OPTIONS.map(([value, label]) => (
+            {CLINICAL_ROLE_OPTIONS.map(([value, label]) => (
               <label key={value} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={roles.includes(value)} onChange={() => toggleRole(value)} />
+                <input
+                  type="checkbox"
+                  disabled={!canEditStaff}
+                  checked={roles.includes(value)}
+                  onChange={() => toggleRole(value)}
+                />
                 {label}
               </label>
             ))}
           </div>
         </div>
 
-        <button type="submit" disabled={saving} className="btn-primary">
-          {saving ? 'Сохранение…' : 'Сохранить изменения'}
-        </button>
+        <div>
+          <label className="label-field" htmlFor="userRole">
+            Права доступа в системе
+          </label>
+          <select
+            id="userRole"
+            className="input-field"
+            disabled={!canEditStaff || !member.user}
+            value={userRole}
+            onChange={(e) => setUserRole(e.target.value)}
+          >
+            <option value="">{member.user ? 'Выберите роль' : 'Аккаунт не создан'}</option>
+            {ACCOUNT_ROLE_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {canEditStaff ? (
+          <button type="submit" disabled={saving} className="btn-primary">
+            {saving ? 'Сохранение…' : 'Сохранить изменения'}
+          </button>
+        ) : null}
       </form>
     </div>
   );
