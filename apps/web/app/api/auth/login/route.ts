@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { authApi } from '@/lib/api';
 import { AUTH_COOKIE } from '@/lib/constants';
 
+export const runtime = 'nodejs';
+
 export async function POST(request: Request) {
   try {
     const { email, password } = (await request.json()) as { email: string; password: string };

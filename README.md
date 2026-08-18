@@ -91,20 +91,6 @@ docker compose up --build
 | `YANDEX_DATA_LOGGING_ENABLED` | Логирование данных Yandex AI | `false` |
 | `MAX_SINGLE_FILE_SIZE_MB` | Макс. размер файла | `100` |
 
-## Демо-пользователи
-
-Пароль для всех: **`ChangeMe123!`**
-
-| Email | Роль |
-|-------|------|
-| admin@example.local | SYSTEM_ADMIN |
-| chief@example.local | CHIEF_DOCTOR |
-| manager@example.local | ORTHOPEDIC_MANAGER |
-| surgeon@example.local | SURGEON |
-| ortho@example.local | ORTHOPEDIST |
-| tech@example.local | DENTAL_TECHNICIAN |
-| auditor@example.local | AUDITOR |
-
 ## Миграции и seed
 
 ```bash
@@ -181,7 +167,7 @@ YANDEX_AI_MODEL_URI=...
 
 ## Хирургический рентгенологический этап
 
-1. Войти как `surgeon@example.local`
+1. Войти под учётной записью модератора или хирурга
 2. Открыть случай → этап POSTOP_SURGICAL_RADIOLOGY_CONTROL
 3. Загрузить послеоперационное ОПТГ
 4. Создать реестр имплантатов, указать метод из справочника

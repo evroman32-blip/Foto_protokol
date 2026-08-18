@@ -30,6 +30,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const res = await fetch(`${API_BASE}${path}`, {
     ...rest,
+    cache: 'no-store',
     headers: {
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
@@ -67,7 +68,14 @@ export interface AuthProfileDto {
   firstName: string;
   middleName?: string | null;
   position?: string | null;
+  specialization?: string | null;
+  clinicalRoles?: string[];
   isReadOnly: boolean;
+  canEditProfile?: boolean;
+  canEditStaffAndPatients?: boolean;
+  canEditPatients?: boolean;
+  canCreateCase?: boolean;
+  canEditClosedStage?: boolean;
 }
 
 export interface LoginResponse {
@@ -82,7 +90,10 @@ export interface RegisterPayload {
   phone: string;
   email: string;
   password: string;
-  requestedRole: string;
+  passwordConfirm: string;
+  isExpert: boolean;
+  position?: string;
+  specialization?: string;
   accentColor: string;
 }
 
@@ -100,6 +111,8 @@ export interface AccountRequestDto {
   lastName: string;
   firstName: string;
   middleName?: string | null;
+  position?: string | null;
+  specialization?: string | null;
 }
 
 export const authApi = {
@@ -109,6 +122,10 @@ export const authApi = {
     request<LoginResponse>('/api/v1/auth/register', { method: 'POST', body: data }),
   registerOptions: () =>
     request<{
+      jobTitles: string[];
+      jobTitlesRequiringSpecialization: string[];
+      specializations: string[];
+      clinicalRoles: { value: string; label: string }[];
       roles: { value: string; label: string }[];
       accentColors: string[];
     }>('/api/v1/auth/register-options'),
@@ -183,7 +200,7 @@ export const patientsApi = {
         body: toPatientPayload(data),
       }),
     ),
-  remove: (id: string) => request<void>(`/api/v1/patients/${id}`, { method: 'DELETE' }),
+  remove: (id: string) => request<{ success: boolean }>(`/api/v1/patients/${id}`, { method: 'DELETE' }),
 };
 
 // --- Staff ---
@@ -194,9 +211,11 @@ export interface StaffDto {
   middleName?: string | null;
   position?: string | null;
   specialization?: string | null;
+  clinicalRoles?: string[];
   roles?: string[];
   isActive?: boolean;
   externalId?: string | null;
+  user?: { id: string; email: string; role: string } | null;
 }
 
 export interface StaffInput {
@@ -205,7 +224,9 @@ export interface StaffInput {
   middleName?: string;
   position?: string;
   specialization?: string;
+  clinicalRoles?: string[];
   roles?: string[];
+  userRole?: string;
 }
 
 export const staffApi = {
@@ -220,6 +241,7 @@ export const staffApi = {
   create: (data: StaffInput) => request<StaffDto>('/api/v1/staff', { method: 'POST', body: data }),
   update: (id: string, data: Partial<StaffInput>) =>
     request<StaffDto>(`/api/v1/staff/${id}`, { method: 'PATCH', body: data }),
+  remove: (id: string) => request<{ success: boolean }>(`/api/v1/staff/${id}`, { method: 'DELETE' }),
 };
 
 // --- Branches & Protocols ---
@@ -495,7 +517,9 @@ export interface StageInstanceDto {
   status: string;
   stageTemplate: { id: string; code: string; name: string; sortOrder: number };
   impressionCaptureMode?: 'SCAN' | 'IMPRESSION' | null;
+  mediaBranchMode?: string | null;
   desiredToothShade?: string | null;
+  startedByUserId?: string | null;
   completeness?: StageCompletenessResult;
   closurePermission?: StageClosurePermissionResult;
 }
@@ -586,6 +610,7 @@ export const casesApi = {
         body: toCreateCasePayload(data),
       }),
     ),
+  remove: (id: string) => request<{ success: boolean }>(`/api/v1/cases/${id}`, { method: 'DELETE' }),
 };
 
 // --- Stages ---
@@ -676,6 +701,11 @@ export const stagesApi = {
       method: 'PATCH',
       body: { impressionCaptureMode },
     }),
+  setMediaBranchMode: (id: string, mediaBranchMode: string) =>
+    request<StageDetailDto>(`/api/v1/stages/${id}/media-branch-mode`, {
+      method: 'PATCH',
+      body: { mediaBranchMode },
+    }),
   setDesiredToothShade: (id: string, desiredToothShade: string) =>
     request<StageDetailDto>(`/api/v1/stages/${id}/desired-tooth-shade`, {
       method: 'PATCH',
@@ -752,7 +782,12 @@ export const uploadApi = {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) resolve();
         else {
-          let message = `Upload failed (${xhr.status})`;
+          let message = `Не удалось сохранить файл на сервере (${xhr.status})`;
+          if (xhr.status === 413) {
+            message = 'Файл слишком большой для прокси сервера. Нужен лимит nginx 200m.';
+          } else if (xhr.status === 404 || xhr.status === 405) {
+            message = 'Сервер не принимает загрузку (старая сборка API). Нужно обновить api, web и nginx.';
+          }
           try {
             const body = JSON.parse(xhr.responseText) as { message?: string | string[] };
             const raw = body.message;
@@ -763,7 +798,12 @@ export const uploadApi = {
           reject(new Error(message));
         }
       };
-      xhr.onerror = () => reject(new Error('Upload failed'));
+      xhr.onerror = () =>
+        reject(
+          new Error(
+            'Сеть оборвала загрузку. На сервере файл уходит через /api/v1, не на localhost. Обновите страницу по Ctrl+F5 после выкладки.',
+          ),
+        );
       xhr.send(form);
     });
   },

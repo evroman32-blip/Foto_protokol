@@ -12,7 +12,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import type { FastifyReply } from 'fastify';
 import { AssignmentSource, AssignmentStatus } from '@mandarin/contracts';
 import { isMediaRequirementEffectivelyRequired } from '@mandarin/domain';
@@ -22,11 +22,13 @@ import { QueueService, QUEUE_NAMES } from '../queue/queue.service';
 import { S3StorageService } from '../storage/s3-storage.service';
 import { AuditAction } from '../../common/decorators/metadata.decorators';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { assertCanDelete } from '../../common/assert-can-delete';
 import { Module } from '@nestjs/common';
 
 class AssignMediaDto {
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   requirementInstanceId?: string;
 
   @IsOptional()
@@ -143,7 +145,28 @@ export class MediaController {
       }
     }
 
-    const { body, contentType, contentLength } = await this.storage.getObjectStream(objectKey);
+    let stream: Awaited<ReturnType<S3StorageService['getObjectStream']>>;
+    try {
+      stream = await this.storage.getObjectStream(objectKey);
+    } catch {
+      // Превью могло не сгенерироваться (падал worker) — показываем оригинал.
+      if (objectKey !== asset.storedObjectKey) {
+        try {
+          stream = await this.storage.getObjectStream(asset.storedObjectKey);
+          mimeHint = asset.mimeType;
+        } catch {
+          throw new NotFoundException(
+            `Файл «${asset.originalFileName}» отсутствует в хранилище. Загрузите его заново.`,
+          );
+        }
+      } else {
+        throw new NotFoundException(
+          `Файл «${asset.originalFileName}» отсутствует в хранилище. Загрузите его заново.`,
+        );
+      }
+    }
+
+    const { body, contentType, contentLength } = stream;
     const mime =
       contentType ||
       mimeHint ||
@@ -326,6 +349,7 @@ export class MediaController {
   @Post(':id/archive')
   @AuditAction('media.archive')
   async archive(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    assertCanDelete(user);
     await this.stageAccess.assertCanMutateByMediaAsset(id, user);
     const asset = await this.prisma.mediaAsset.findUnique({
       where: { id },
@@ -423,6 +447,7 @@ export class StageMediaController {
   @Post('cleanup-duplicates')
   @AuditAction('media.cleanup-duplicates')
   async cleanupDuplicates(@Param('stageId') stageId: string, @CurrentUser() user: AuthUser) {
+    assertCanDelete(user);
     await this.stageAccess.assertCanMutateStage(stageId, user);
     const stage = await this.prisma.stageInstance.findUnique({
       where: { id: stageId },

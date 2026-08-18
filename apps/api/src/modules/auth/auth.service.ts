@@ -1,12 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { UserAccountStatus, UserRole } from '@mandarin/contracts';
+import { UserAccountStatus, UserRole, requestedRoleFromJob, jobTitleRequiresSpecialization, USER_ROLE_LABELS, canEditStaffAndPatients, canEditPatients, canCreateClinicalCase, canEditClosedStage } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
@@ -25,6 +26,11 @@ export const ACCENT_COLORS = [
 ] as const;
 
 export const REGISTERABLE_ROLES: UserRole[] = [
+  UserRole.MODERATOR,
+  UserRole.EXECUTIVE_DIRECTOR,
+  UserRole.CLINIC_MANAGER,
+  UserRole.CLINIC_ADMINISTRATOR,
+  UserRole.TREATMENT_CURATOR,
   UserRole.CHIEF_DOCTOR,
   UserRole.ORTHOPEDIC_MANAGER,
   UserRole.SURGEON,
@@ -36,19 +42,7 @@ export const REGISTERABLE_ROLES: UserRole[] = [
   UserRole.EXPERT,
 ];
 
-export const USER_ROLE_LABELS: Record<string, string> = {
-  SYSTEM_ADMIN: 'Администратор',
-  CHIEF_DOCTOR: 'Главный врач',
-  ORTHOPEDIC_MANAGER: 'Ортопед-менеджер',
-  SURGEON: 'Хирург',
-  ORTHOPEDIST: 'Ортопед',
-  CONSULTING_DOCTOR: 'Консультирующий врач',
-  DENTAL_TECHNICIAN: 'Зубной техник',
-  ASSISTANT: 'Ассистент',
-  RADIOLOGY_OPERATOR: 'Рентген-лаборант',
-  AUDITOR: 'Аудитор',
-  EXPERT: 'Эксперт',
-};
+export { USER_ROLE_LABELS };
 
 export const ACCOUNT_STATUS_LABELS: Record<string, string> = {
   PENDING: 'Ожидает подтверждения',
@@ -63,7 +57,10 @@ export interface RegisterInput {
   phone: string;
   email: string;
   password: string;
-  requestedRole: UserRole;
+  passwordConfirm: string;
+  isExpert: boolean;
+  position?: string;
+  specialization?: string;
   accentColor: string;
 }
 
@@ -84,7 +81,7 @@ function toAuthUser(user: {
   staffMemberId: string | null;
   accountStatus: string;
   requestedRole: string | null;
-  staffMember?: { branchId: string | null } | null;
+  staffMember?: { branchId: string | null; position?: string | null } | null;
 }): AuthUser {
   return {
     id: user.id,
@@ -94,6 +91,7 @@ function toAuthUser(user: {
     branchId: user.staffMember?.branchId ?? null,
     accountStatus: user.accountStatus,
     requestedRole: user.requestedRole,
+    position: user.staffMember?.position ?? null,
   };
 }
 
@@ -147,11 +145,28 @@ export class AuthService {
   }
 
   async register(dto: RegisterInput) {
-    if (!REGISTERABLE_ROLES.includes(dto.requestedRole)) {
-      throw new BadRequestException('Эту роль нельзя выбрать при регистрации');
+    if (dto.password !== dto.passwordConfirm) {
+      throw new BadRequestException('Пароли не совпадают, необходим повторный ввод');
     }
     if (!ACCENT_COLORS.includes(dto.accentColor as (typeof ACCENT_COLORS)[number])) {
       throw new BadRequestException('Выберите цвет кнопки аккаунта из палитры');
+    }
+
+    const isExpert = Boolean(dto.isExpert);
+    const position = isExpert ? 'Эксперт' : dto.position?.trim();
+    const specialization = isExpert ? null : dto.specialization?.trim() || null;
+    const requestedRole = isExpert
+      ? UserRole.EXPERT
+      : requestedRoleFromJob(position ?? '', specialization);
+
+    if (!isExpert && !position) {
+      throw new BadRequestException('Выберите должность');
+    }
+    if (!isExpert && position && jobTitleRequiresSpecialization(position) && !specialization) {
+      throw new BadRequestException('Выберите специализацию');
+    }
+    if (!REGISTERABLE_ROLES.includes(requestedRole)) {
+      throw new BadRequestException('Эту роль нельзя выбрать при регистрации');
     }
 
     const email = dto.email.trim().toLowerCase();
@@ -161,14 +176,14 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const position = USER_ROLE_LABELS[dto.requestedRole] ?? 'Сотрудник';
 
     const staff = await this.prisma.staffMember.create({
       data: {
         lastName: dto.lastName.trim(),
         firstName: dto.firstName.trim(),
         middleName: dto.middleName?.trim() || null,
-        position,
+        position: position || 'Сотрудник',
+        specialization,
       },
     });
 
@@ -178,8 +193,8 @@ export class AuthService {
         phone: dto.phone.trim(),
         passwordHash,
         role: UserRole.EXPERT,
-        requestedRole: dto.requestedRole,
-        accountStatus: UserAccountStatus.PENDING,
+        requestedRole,
+        accountStatus: isExpert ? UserAccountStatus.APPROVED : UserAccountStatus.PENDING,
         accentColor: dto.accentColor,
         staffMemberId: staff.id,
       },
@@ -193,7 +208,10 @@ export class AuthService {
       entityId: user.id,
       metadata: {
         email: user.email,
-        requestedRole: dto.requestedRole,
+        isExpert,
+        requestedRole,
+        position,
+        specialization,
       },
     });
 
@@ -223,6 +241,11 @@ export class AuthService {
       include: { staffMember: true },
     });
     if (!user) throw new UnauthorizedException('Пользователь не найден');
+    if (user.accountStatus !== UserAccountStatus.APPROVED) {
+      throw new ForbiddenException(
+        'Редактировать профиль можно после подтверждения прав модератором.',
+      );
+    }
 
     if (dto.accentColor && !ACCENT_COLORS.includes(dto.accentColor as (typeof ACCENT_COLORS)[number])) {
       throw new BadRequestException('Выберите цвет кнопки аккаунта из палитры');
@@ -277,9 +300,12 @@ export class AuthService {
       firstName: string;
       middleName: string | null;
       position: string;
+      specialization?: string | null;
+      clinicalRoles?: string[];
       branch?: { id: string; name: string } | null;
     } | null;
   }) {
+    const approved = (user.accountStatus ?? 'APPROVED') === 'APPROVED';
     return {
       id: user.id,
       email: user.email,
@@ -299,8 +325,15 @@ export class AuthService {
       firstName: user.staffMember?.firstName ?? '',
       middleName: user.staffMember?.middleName ?? null,
       position: user.staffMember?.position ?? null,
+      specialization: user.staffMember?.specialization ?? null,
+      clinicalRoles: user.staffMember?.clinicalRoles ?? [],
       branch: user.staffMember?.branch ?? null,
-      isReadOnly: user.role === UserRole.EXPERT,
+      isReadOnly: user.role === UserRole.EXPERT || !approved,
+      canEditProfile: approved,
+      canEditStaffAndPatients: approved && canEditStaffAndPatients(user.role),
+      canEditPatients: approved && canEditPatients(user.role, user.staffMember?.position),
+      canCreateCase: approved && canCreateClinicalCase(user.role, user.staffMember?.position),
+      canEditClosedStage: canEditClosedStage(user.role),
     };
   }
 }

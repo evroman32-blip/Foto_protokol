@@ -2,10 +2,11 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
-import { ErrorState, LoadingState } from '@/components/States';
+import { SearchablePersonSelect } from '@/components/SearchablePersonSelect';
+import { LoadingState } from '@/components/States';
 import {
   adminApi,
   casesApi,
@@ -17,6 +18,7 @@ import {
   type StaffDto,
 } from '@/lib/api';
 import { JAW_SCOPE_LABELS } from '@/lib/constants';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 function formatName(entity: { lastName: string; firstName: string; middleName?: string | null }) {
   return [entity.lastName, entity.firstName, entity.middleName].filter(Boolean).join(' ');
@@ -24,6 +26,7 @@ function formatName(entity: { lastName: string; firstName: string; middleName?: 
 
 export default function NewCasePage() {
   const router = useRouter();
+  const { canCreateCase, loading: userLoading } = useCurrentUser();
   const [patients, setPatients] = useState<PatientDto[]>([]);
   const [staff, setStaff] = useState<StaffDto[]>([]);
   const [branches, setBranches] = useState<BranchDto[]>([]);
@@ -31,25 +34,45 @@ export default function NewCasePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const patientSearchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const handlePatientQuery = useCallback((query: string) => {
+    const term = query.trim();
+    if (patientSearchTimer.current) window.clearTimeout(patientSearchTimer.current);
+    if (!term) return;
+    patientSearchTimer.current = window.setTimeout(() => {
+      void patientsApi
+        .list({ q: term })
+        .then((rows) => {
+          setPatients((prev) => {
+            const byId = new Map(prev.map((patient) => [patient.id, patient]));
+            for (const row of rows) byId.set(row.id, row);
+            return [...byId.values()];
+          });
+        })
+        .catch(() => undefined);
+    }, 200);
+  }, []);
 
   useEffect(() => {
     async function load() {
-      try {
-        const [p, s, b, v] = await Promise.all([
-          patientsApi.list(),
-          staffApi.list(),
-          adminApi.branches(),
-          adminApi.protocolVersions(),
-        ]);
-        setPatients(p);
-        setStaff(s);
-        setBranches(b);
-        setVersions(v.filter((x) => x.status === 'PUBLISHED'));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Ошибка загрузки справочников');
-      } finally {
-        setLoading(false);
+      const results = await Promise.allSettled([
+        patientsApi.list(),
+        staffApi.list(),
+        adminApi.branches(),
+        adminApi.protocolVersions(),
+      ]);
+      const [p, s, b, v] = results;
+      if (p.status === 'fulfilled') setPatients(p.value);
+      if (s.status === 'fulfilled') setStaff(s.value);
+      if (b.status === 'fulfilled') setBranches(b.value);
+      if (v.status === 'fulfilled') setVersions(v.value.filter((x) => x.status === 'PUBLISHED'));
+      const failed = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+      if (failed) {
+        const reason = failed.reason;
+        setError(reason instanceof Error ? reason.message : 'Ошибка загрузки справочников');
       }
+      setLoading(false);
     }
     void load();
   }, []);
@@ -81,7 +104,17 @@ export default function NewCasePage() {
     }
   }
 
-  if (loading) return <LoadingState label="Загрузка справочников…" />;
+  if (userLoading || loading) return <LoadingState label="Загрузка справочников…" />;
+  if (!canCreateCase) {
+    return (
+      <div>
+        <PageHeader title="Новый клинический случай" />
+        <div className="alert-error">
+          Создавать случай могут врачи, управляющий клиникой, администратор клиники и модератор.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -102,14 +135,14 @@ export default function NewCasePage() {
           <label className="label-field" htmlFor="patientId">
             Пациент *
           </label>
-          <select id="patientId" name="patientId" required className="input-field">
-            <option value="">Выберите пациента</option>
-            {patients.map((p) => (
-              <option key={p.id} value={p.id}>
-                {formatName(p)}
-              </option>
-            ))}
-          </select>
+          <SearchablePersonSelect
+            id="patientId"
+            name="patientId"
+            required
+            people={patients}
+            placeholder="Начните вводить фамилию"
+            onQueryChange={handlePatientQuery}
+          />
         </div>
 
         <div>

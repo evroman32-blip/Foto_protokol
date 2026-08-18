@@ -80,6 +80,72 @@ describe('Stage close permissions', () => {
     );
 
     expect(permission.canClose).toBe(false);
-    expect(permission.blockingReasons.some((r) => r.includes('primary'))).toBe(true);
+    expect(permission.blockingReasons.some((r) => r.includes('начал этот этап'))).toBe(true);
+  });
+
+  it('главный врач может закрыть этап, даже если не начинал его', () => {
+    const completeness = service.evaluate({
+      stageCode: StageCode.PRE_OPERATION,
+      stageStatus: StageInstanceStatus.CONFIRMED,
+      ownerRole: StageOwnerRole.ORTHOPEDIST,
+      participants: [
+        { role: ParticipantRole.CONSULTING_DOCTOR, isPrimary: true },
+        { role: ParticipantRole.ORTHOPEDIST, isPrimary: true },
+        { role: ParticipantRole.SURGEON, isPrimary: true },
+        { role: ParticipantRole.DENTAL_TECHNICIAN, isPrimary: true },
+      ],
+      requirements: [],
+      mediaAssets: [],
+      doctorConfirmationPresent: true,
+    });
+    const permission = service.canUserCloseStage(
+      {
+        stageInstanceId: 's1',
+        stageCode: StageCode.PRE_OPERATION,
+        stageTemplateOwnerRole: StageOwnerRole.ORTHOPEDIST,
+        stageStatus: StageInstanceStatus.CONFIRMED,
+        closingUserId: 'chief',
+        closingUserRole: UserRole.CHIEF_DOCTOR,
+        startedByUserId: 'surgeon-user',
+        primaryParticipants: [],
+        hasDoctorConfirmation: true,
+        hasSurgeonRadiologyConfirmation: false,
+      },
+      completeness,
+    );
+    expect(permission.blockingReasons.some((r) => r.includes('начал этот этап'))).toBe(false);
+  });
+
+  it('врач, который начал этап, может закрыть его', () => {
+    const completeness = service.evaluate({
+      stageCode: StageCode.PRE_OPERATION,
+      stageStatus: StageInstanceStatus.CONFIRMED,
+      ownerRole: StageOwnerRole.ORTHOPEDIST,
+      participants: [
+        { role: ParticipantRole.CONSULTING_DOCTOR, isPrimary: true },
+        { role: ParticipantRole.ORTHOPEDIST, isPrimary: true },
+        { role: ParticipantRole.SURGEON, isPrimary: true },
+        { role: ParticipantRole.DENTAL_TECHNICIAN, isPrimary: true },
+      ],
+      requirements: [],
+      mediaAssets: [],
+      doctorConfirmationPresent: true,
+    });
+    const permission = service.canUserCloseStage(
+      {
+        stageInstanceId: 's1',
+        stageCode: StageCode.PRE_OPERATION,
+        stageTemplateOwnerRole: StageOwnerRole.ORTHOPEDIST,
+        stageStatus: StageInstanceStatus.CONFIRMED,
+        closingUserId: 'surgeon-user',
+        closingUserRole: UserRole.SURGEON,
+        startedByUserId: 'surgeon-user',
+        primaryParticipants: [],
+        hasDoctorConfirmation: true,
+        hasSurgeonRadiologyConfirmation: false,
+      },
+      completeness,
+    );
+    expect(permission.blockingReasons.some((r) => r.includes('начал этот этап'))).toBe(false);
   });
 });

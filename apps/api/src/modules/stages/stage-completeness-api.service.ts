@@ -192,6 +192,7 @@ export class StageCompletenessApiService {
         desiredToothShade: stage.desiredToothShade ?? null,
       },
       impressionCaptureMode: stage.impressionCaptureMode ?? null,
+      mediaBranchMode: stage.mediaBranchMode ?? null,
       emergencyEventsCount: stage.emergencyEvents.length,
       misProvider: env.MIS_PROVIDER,
       stoma1cIntegrationEnabled: isStoma1cIntegrated(env),
@@ -239,6 +240,12 @@ export class StageCompletenessApiService {
 
     const env = getEnv();
 
+    const firstBatch = await this.prisma.uploadBatch.findFirst({
+      where: { stageInstanceId },
+      orderBy: { createdAt: 'asc' },
+      select: { uploadedBy: true },
+    });
+
     const context: StageClosureContext = {
       stageInstanceId,
       stageCode: stage.stageTemplate.code,
@@ -247,6 +254,7 @@ export class StageCompletenessApiService {
       closingUserId,
       closingUserRole: closingUser.role,
       closingUserStaffMemberId: closingUser.staffMemberId,
+      startedByUserId: stage.startedByUserId ?? firstBatch?.uploadedBy ?? null,
       primaryParticipants: stage.clinicalCase.participants.map((p) => ({
         role: p.participantRole as ParticipantRole,
         staffMemberId: p.staffMemberId,

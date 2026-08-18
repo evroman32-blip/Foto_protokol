@@ -6,14 +6,19 @@ import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 import { getEnv } from '@mandarin/config';
 
+type ProcessMediaJob = {
+  mediaAssetId?: string;
+  uploadBatchId?: string;
+};
+
 export function createProcessMediaProcessor() {
   const env = getEnv();
   const connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
   const derivativesQueue = new Queue(QUEUE_NAMES.GENERATE_DERIVATIVES, { connection });
 
-  return async (job: Job<{ mediaAssetId: string }>) => {
+  async function processAsset(mediaAssetId: string) {
     const asset = await prisma.mediaAsset.findUniqueOrThrow({
-      where: { id: job.data.mediaAssetId },
+      where: { id: mediaAssetId },
     });
 
     await prisma.mediaAsset.update({
@@ -24,7 +29,7 @@ export function createProcessMediaProcessor() {
     const buffer = await downloadObject(asset.storedObjectKey);
 
     if (asset.mediaType === 'PHOTO') {
-      const { buffer: processed, width, height } = await processPhotoBuffer(buffer);
+      const { width, height } = await processPhotoBuffer(buffer);
       await updateMediaProcessing(asset.id, { width, height });
     } else if (asset.mediaType === 'VIDEO') {
       const { durationSec, hasAudio } = await probeVideo(buffer);
@@ -37,5 +42,31 @@ export function createProcessMediaProcessor() {
     await derivativesQueue.add('ai-classify', { mediaAssetId: asset.id }, { delay: 1000 });
 
     return { mediaAssetId: asset.id, status: 'processed' };
+  }
+
+  return async (job: Job<ProcessMediaJob>) => {
+    if (job.data.mediaAssetId) {
+      return processAsset(job.data.mediaAssetId);
+    }
+
+    // Закрытие пакета: отдельного файла нет, дообрабатываем то, что осталось.
+    const uploadBatchId = job.data.uploadBatchId;
+    if (!uploadBatchId) return { skipped: true };
+
+    const pending = await prisma.mediaAsset.findMany({
+      where: { uploadBatchId, status: 'UPLOADED', archivedAt: null },
+      select: { id: true },
+    });
+
+    for (const asset of pending) {
+      await processAsset(asset.id);
+    }
+
+    await prisma.uploadBatch.update({
+      where: { id: uploadBatchId },
+      data: { status: 'COMPLETED' },
+    });
+
+    return { uploadBatchId, processed: pending.length };
   };
 }

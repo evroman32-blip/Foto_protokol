@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CompletenessSummary } from '@/components/CompletenessSummary';
 import { ImpressionCaptureModeToggle } from '@/components/ImpressionCaptureModeToggle';
 import { JawRelationBanner } from '@/components/JawRelationBanner';
+import { MediaBranchModeToggle } from '@/components/MediaBranchModeToggle';
 import { MediaViewer } from '@/components/MediaViewer';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState, LoadingState } from '@/components/States';
@@ -18,7 +19,13 @@ import {
   type MediaAssetDto,
   type StageDetailDto,
 } from '@/lib/api';
+import { confirmDelete } from '@/lib/confirm-delete';
 import { STAGE_STATUS_LABELS } from '@/lib/constants';
+import {
+  MEDIA_BRANCH_LABELS,
+  hasMixedMediaBranches,
+  listMediaBranchTypes,
+} from '@/lib/media-branch-mode';
 import { useCurrentUser } from '@/lib/use-current-user';
 
 function assetBaseName(asset: MediaAssetDto) {
@@ -52,7 +59,7 @@ export default function StageDetailPage() {
   > | null>(null);
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
-  const { canEditClosedStage, isReadOnly } = useCurrentUser();
+  const { canEditClosedStage, isReadOnly, canCloseStage, canDelete } = useCurrentUser();
   const [modeBusy, setModeBusy] = useState(false);
   const [busyMedia, setBusyMedia] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +112,27 @@ export default function StageDetailPage() {
     });
   }, [stage?.mediaAssets]);
 
+  const mediaBranchTypes = useMemo(
+    () =>
+      listMediaBranchTypes(
+        (stage?.requirementInstances ?? []).map((r) => ({
+          required: r.mediaRequirement.required,
+          mediaType: r.mediaRequirement.mediaType,
+          code: r.mediaRequirement.code,
+        })),
+      ),
+    [stage?.requirementInstances],
+  );
+  const mixedMediaBranches =
+    stage?.stageTemplate.code !== 'IMPRESSIONS_OR_SCANS' &&
+    hasMixedMediaBranches(
+      (stage?.requirementInstances ?? []).map((r) => ({
+        required: r.mediaRequirement.required,
+        mediaType: r.mediaRequirement.mediaType,
+        code: r.mediaRequirement.code,
+      })),
+    );
+
   function openViewer(asset: MediaAssetDto) {
     // Единая лента по порядку протокола: 1 → 2 → 3 (зубы 18…48) → …
     const index = Math.max(0, assets.findIndex((a) => a.id === asset.id));
@@ -136,6 +164,7 @@ export default function StageDetailPage() {
   }
 
   async function handleDelete(asset: MediaAssetDto) {
+    if (!canDelete) return;
     const seq = Math.max(1, assets.findIndex((a) => a.id === asset.id) + 1);
     const title = assetTitle(asset, seq);
     if (!canDeleteAsset(asset)) {
@@ -144,7 +173,7 @@ export default function StageDetailPage() {
       );
       return;
     }
-    if (!window.confirm(`Удалить файл «${title}»?`)) return;
+    if (!(await confirmDelete(`Удалить файл «${title}»?`))) return;
     setBusyMedia(true);
     setError(null);
     setMessage(null);
@@ -161,10 +190,11 @@ export default function StageDetailPage() {
   }
 
   async function handleCleanupDuplicates() {
+    if (!canDelete) return;
     if (
-      !window.confirm(
+      !(await confirmDelete(
         'Удалить лишние (задвоенные) файлы? По каждому положению останется только обязательное количество.',
-      )
+      ))
     ) {
       return;
     }
@@ -183,58 +213,15 @@ export default function StageDetailPage() {
     }
   }
 
-  const isSurgicalRadiology =
-    stage?.stageTemplate.code === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL';
   const isClosed = stage?.status === 'CLOSED';
-  /** После закрытия состав файлов правят только главный врач и админ. Эксперт — только просмотр. */
+  const canCloseThisStage = canCloseStage(stage?.startedByUserId);
+  /** После закрытия состав файлов правит только модератор. */
   const mediaEditable = !isReadOnly && (!isClosed || canEditClosedStage);
-
-  const needsDoctorConfirm =
-    completeness?.blockingReasons?.some((r) =>
-      r.toLowerCase().includes('подтверждение врача'),
-    ) ?? false;
-  const needsSurgeonConfirm =
-    completeness?.blockingReasons?.some((r) =>
-      r.toLowerCase().includes('хирург не подтвердил'),
-    ) ?? false;
-
-  /** Подтверждение — часть закрытия: отдельной кнопки на этапе больше нет. */
-  async function confirmBeforeClose() {
-    if (isSurgicalRadiology) {
-      if (!needsSurgeonConfirm) return;
-      const [studies, implants] = await Promise.all([
-        radiologyApi.studies(stageId),
-        radiologyApi.implants(stageId),
-      ]);
-      const sliceOf = (i: (typeof implants)[number]) =>
-        i.radiologyAttachments ?? i.attachments ?? [];
-      const documented = implants.every(
-        (i) =>
-          (i.jawScope === 'UPPER' || i.jawScope === 'LOWER') &&
-          i.toothPositionFdi &&
-          sliceOf(i).some((a) => a.surgeonConfirmed),
-      );
-      await radiologyApi.confirmSurgeon(stageId, {
-        comment: '',
-        allImplantsDocumented: implants.length > 0 && documented,
-        optgUploaded: studies.some((s) => s.studyType === 'OPTG'),
-        cbctUploaded: true,
-        allImplantsHaveCtSlices: implants.every((i) =>
-          sliceOf(i).some((a) => a.surgeonConfirmed),
-        ),
-        allImplantsHaveMethodSelected: true,
-      });
-      return;
-    }
-    if (needsDoctorConfirm) {
-      await stagesApi.confirmDoctor(stageId);
-    }
-  }
 
   async function handleCloseStage() {
     if (
       !window.confirm(
-        'Закрыть этап? После закрытия состав загруженных файлов смогут менять только главный врач и администратор.',
+        'Закрыть этап? После закрытия состав файлов сможет менять только модератор.',
       )
     ) {
       return;
@@ -243,7 +230,6 @@ export default function StageDetailPage() {
     setError(null);
     setMessage(null);
     try {
-      await confirmBeforeClose();
       await stagesApi.close(stageId);
       setMessage('Этап закрыт');
       await load();
@@ -311,6 +297,36 @@ export default function StageDetailPage() {
         />
       ) : null}
 
+      {mixedMediaBranches ? (
+        <MediaBranchModeToggle
+          types={mediaBranchTypes}
+          value={stage.mediaBranchMode}
+          busy={modeBusy}
+          disabled={stage.status === 'CLOSED' || isReadOnly}
+          onChange={(mode) => {
+            void (async () => {
+              setModeBusy(true);
+              setError(null);
+              try {
+                await stagesApi.setMediaBranchMode(stageId, mode);
+                setMessage(
+                  mode === 'ALL'
+                    ? 'Для закрытия этапа нужны все виды информации.'
+                    : `Для закрытия этапа обязателен вид: ${MEDIA_BRANCH_LABELS[mode] ?? mode}.`,
+                );
+                await load();
+              } catch (err) {
+                setError(
+                  err instanceof Error ? err.message : 'Не удалось сохранить вид информации',
+                );
+              } finally {
+                setModeBusy(false);
+              }
+            })();
+          }}
+        />
+      ) : null}
+
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <CompletenessSummary completeness={completeness} />
         <div className="card">
@@ -324,14 +340,16 @@ export default function StageDetailPage() {
             <button
               type="button"
               className="btn-secondary"
-              disabled={closing || isClosed || isReadOnly}
+              disabled={closing || isClosed || isReadOnly || !canCloseThisStage}
               onClick={() => void handleCloseStage()}
               title={
                 isReadOnly
                   ? 'В режиме просмотра закрытие этапа недоступно'
                   : isClosed
                     ? 'Этап уже закрыт'
-                    : 'Подтвердить и закрыть этап при полной комплектности'
+                    : !canCloseThisStage
+                      ? 'Закрыть этап может главный врач или врач, который начал этот этап'
+                      : 'Подтвердить и закрыть этап при полной комплектности'
               }
             >
               {closing ? 'Закрытие…' : isClosed ? 'Этап закрыт' : 'Закрыть этап'}
@@ -340,9 +358,9 @@ export default function StageDetailPage() {
           <p className="mt-3 text-xs text-gray-500">
             {isClosed
               ? mediaEditable
-                ? 'Этап закрыт. Состав файлов доступен для правки только вам как главному врачу или администратору.'
-                : 'Этап закрыт. Загрузка и удаление файлов недоступны — обратитесь к главному врачу.'
-              : 'Закрытие возможно при полной комплектности; подтверждение ответственного врача выполняется автоматически. После закрытия состав файлов смогут менять только главный врач и администратор.'}
+                ? 'Этап закрыт. Состав файлов доступен для правки только модератору.'
+                : 'Этап закрыт. Загрузка и удаление файлов недоступны — обратитесь к модератору.'
+              : 'Закрыть этап могут главный врач и врач, который начал этот этап. После закрытия состав файлов сможет менять только модератор.'}
           </p>
         </div>
       </div>
@@ -350,7 +368,7 @@ export default function StageDetailPage() {
       <div className="card">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-semibold">Медиаматериалы</h2>
-          {assets.length > 0 && mediaEditable ? (
+          {assets.length > 0 && canDelete ? (
             <button
               type="button"
               className="btn-secondary !px-3 !py-1 text-xs"
@@ -375,7 +393,7 @@ export default function StageDetailPage() {
                   >
                     <span className="font-medium">{title}</span>
                   </button>
-                  {mediaEditable ? (
+                  {canDelete ? (
                     <button
                       type="button"
                       className="btn-secondary shrink-0 !px-2 !py-1 text-xs"

@@ -10,6 +10,7 @@ import {
   type SliceCardsHandle,
 } from '@/components/ImplantSliceCardsForm';
 import { ImpressionCaptureModeToggle } from '@/components/ImpressionCaptureModeToggle';
+import { MediaBranchModeToggle } from '@/components/MediaBranchModeToggle';
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/States';
 import {
@@ -19,10 +20,19 @@ import {
   type MediaAssetDto,
   type RequirementInstanceDto,
 } from '@/lib/api';
+import { confirmDelete } from '@/lib/confirm-delete';
 import {
   isRequirementEffectivelyRequired,
   requirementInactiveHint,
 } from '@/lib/impression-mode';
+import {
+  MEDIA_BRANCH_LABELS,
+  hasMixedMediaBranches,
+  isImplantSliceCardsRequirement,
+  isMediaBranchRequirementActive,
+  listMediaBranchTypes,
+  mediaBranchInactiveHint,
+} from '@/lib/media-branch-mode';
 import {
   attachDocumentFileDropGuard,
   preventBrowserFileNavigation,
@@ -45,26 +55,13 @@ function isUploadableMediaType(mediaType: string) {
   ].includes(mediaType);
 }
 
-const ACCEPT_BY_TYPE: Record<string, string> = {
-  PHOTO: 'image/jpeg,image/png,image/tiff,image/webp,.jpg,.jpeg,.png,.tif,.tiff',
-  VIDEO: 'video/mp4,video/quicktime,.mp4,.mov',
-  DOCUMENT: 'application/pdf,.pdf',
-  STL: [
-    '.obj',
-    '.mtl',
-    '.jpg',
-    '.jpeg',
-    '.png',
-    '.stl',
-    'model/obj',
-    'model/stl',
-    'application/sla',
-    'image/jpeg',
-    'image/png',
-  ].join(','),
-  RADIOLOGY: 'image/*,application/pdf',
-  RADIOLOGY_IMAGE: 'image/*,application/pdf',
-};
+function isScanRequirement(req: { mediaType?: string; code?: string; name?: string }) {
+  if (req.mediaType === 'STL') return true;
+  const code = (req.code ?? '').toUpperCase();
+  const name = (req.name ?? '').toLowerCase();
+  if (/(SCAN|SKAN|STL|OBJ)/.test(code)) return true;
+  return /скан|stl|obj|3d-?модел/.test(name);
+}
 
 const STL_SLOT_LABEL: Record<string, string> = {
   IMP_SCAN_UPPER: 'верхняя челюсть',
@@ -122,6 +119,7 @@ export default function StageUploadPage() {
   const [impressionCaptureMode, setImpressionCaptureMode] = useState<
     'SCAN' | 'IMPRESSION' | null
   >(null);
+  const [mediaBranchMode, setMediaBranchMode] = useState<string | null>(null);
   const [desiredToothShade, setDesiredToothShade] = useState<string>('');
   const [shadeBusy, setShadeBusy] = useState(false);
   const [modeBusy, setModeBusy] = useState(false);
@@ -134,7 +132,7 @@ export default function StageUploadPage() {
   /** Очередь срезов имплантатов — сохраняется той же кнопкой, что и остальные положения. */
   const sliceFormRef = useRef<SliceCardsHandle>(null);
   const [slicePending, setSlicePending] = useState(0);
-  const { canEditClosedStage, isReadOnly } = useCurrentUser();
+  const { canEditClosedStage, isReadOnly, canDelete } = useCurrentUser();
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -144,6 +142,7 @@ export default function StageUploadPage() {
       setStageCode(stage.stageTemplate.code);
       setStageStatus(stage.status);
       setImpressionCaptureMode(stage.impressionCaptureMode ?? null);
+      setMediaBranchMode(stage.mediaBranchMode ?? null);
       setDesiredToothShade(stage.desiredToothShade ?? '');
       const reqs = [...(stage.requirementInstances ?? [])]
         .filter((r) => r.mediaRequirement.isActive !== false)
@@ -170,13 +169,13 @@ export default function StageUploadPage() {
   const stageLocked = isReadOnly || (stageStatus === 'CLOSED' && !canEditClosedStage);
   const canUpload = !stageLocked;
 
-  /** Все активные положения шаблона в порядке протокола. */
-  const protocolOrderedRequirements = useMemo(() => {
+  const numberedRequirements = useMemo(() => {
     return [...requirements]
       .filter(
         (r) =>
           r.mediaRequirement.isActive !== false &&
-          isUploadableMediaType(r.mediaRequirement.mediaType),
+          (isImplantSliceCardsRequirement(r.mediaRequirement) ||
+            isUploadableMediaType(r.mediaRequirement.mediaType)),
       )
       .sort((a, b) => {
         const ao = a.mediaRequirement.sortOrder ?? 0;
@@ -186,13 +185,56 @@ export default function StageUploadPage() {
       });
   }, [requirements]);
 
+  /** Обычные положения для файловых карточек — без формы срезов КТ. */
+  const protocolOrderedRequirements = useMemo(
+    () => numberedRequirements.filter((r) => !isImplantSliceCardsRequirement(r.mediaRequirement)),
+    [numberedRequirements],
+  );
+
+  const sliceCardRequirements = useMemo(
+    () => numberedRequirements.filter((r) => isImplantSliceCardsRequirement(r.mediaRequirement)),
+    [numberedRequirements],
+  );
+  const hasSliceCards = sliceCardRequirements.length > 0;
+
   const protocolNumberById = useMemo(() => {
     const map = new Map<string, number>();
-    protocolOrderedRequirements.forEach((r, idx) => {
+    numberedRequirements.forEach((r, idx) => {
       map.set(r.id, idx + 1);
     });
     return map;
-  }, [protocolOrderedRequirements]);
+  }, [numberedRequirements]);
+
+  const sliceCardHeading = useMemo(() => {
+    const first = sliceCardRequirements[0];
+    if (!first) return 'Карточки срезов имплантатов';
+    const order = protocolNumberById.get(first.id);
+    return `${order != null ? `${order}. ` : ''}${first.mediaRequirement.name}`;
+  }, [sliceCardRequirements, protocolNumberById]);
+
+  const mediaBranchTypes = useMemo(
+    () =>
+      listMediaBranchTypes(
+        protocolOrderedRequirements.map((r) => ({
+          required: r.mediaRequirement.required,
+          mediaType: r.mediaRequirement.mediaType,
+          code: r.mediaRequirement.code,
+          name: r.mediaRequirement.name,
+          specialRule: r.mediaRequirement.specialRule,
+        })),
+      ),
+    [protocolOrderedRequirements],
+  );
+  const mixedMediaBranches =
+    stageCode !== 'IMPRESSIONS_OR_SCANS' && hasMixedMediaBranches(
+      protocolOrderedRequirements.map((r) => ({
+        required: r.mediaRequirement.required,
+        mediaType: r.mediaRequirement.mediaType,
+        code: r.mediaRequirement.code,
+        name: r.mediaRequirement.name,
+        specialRule: r.mediaRequirement.specialRule,
+      })),
+    );
 
   const pendingCount = useMemo(
     () => Object.values(filesByReq).reduce((n, files) => n + (files?.length ?? 0), 0),
@@ -288,6 +330,7 @@ export default function StageUploadPage() {
   }
 
   async function handleDeleteAsset(asset: MediaAssetDto, needed: number) {
+    if (!canDelete) return;
     const code =
       asset.requirementCode ??
       asset.assignments?.find((a) => a.status !== 'REJECTED')?.requirementCode ??
@@ -306,7 +349,7 @@ export default function StageUploadPage() {
       setError('Нельзя удалить: останется меньше обязательного минимума для положения');
       return;
     }
-    if (!window.confirm('Удалить этот файл?')) return;
+    if (!(await confirmDelete('Удалить этот файл?'))) return;
     setBusy(true);
     setError(null);
     try {
@@ -321,10 +364,11 @@ export default function StageUploadPage() {
   }
 
   async function handleCleanupDuplicates() {
+    if (!canDelete) return;
     if (
-      !window.confirm(
+      !(await confirmDelete(
         'Удалить задвоенные файлы этапа? По каждому положению останется обязательный минимум.',
-      )
+      ))
     ) {
       return;
     }
@@ -375,7 +419,14 @@ export default function StageUploadPage() {
             impressionCaptureMode,
             code,
             templateRequired: req?.mediaRequirement.required ?? true,
-          })
+          }) &&
+            isMediaBranchRequirementActive({
+              stageCode,
+              mediaBranchMode,
+              mixedMediaBranches,
+              mediaType: req?.mediaRequirement.mediaType ?? '',
+              templateRequired: req?.mediaRequirement.required ?? true,
+            })
             ? 1
             : 0,
         );
@@ -420,7 +471,7 @@ export default function StageUploadPage() {
             source: 'DOCTOR',
           });
 
-          if (replaceMode) {
+          if (replaceMode && canDelete) {
             for (const old of existing) {
               await mediaApi.archive(old.id);
             }
@@ -428,7 +479,7 @@ export default function StageUploadPage() {
           } else {
             // Добавление до minCount / maxCount — не трогаем уже загруженные.
             existing = [asset, ...existing];
-            if (maxCount != null && existing.length > maxCount) {
+            if (canDelete && maxCount != null && existing.length > maxCount) {
               const removeList = existing.slice(maxCount);
               for (const old of removeList) {
                 await mediaApi.archive(old.id);
@@ -514,12 +565,44 @@ export default function StageUploadPage() {
         </div>
       ) : null}
 
+      {mixedMediaBranches ? (
+        <div className="mt-4">
+          <MediaBranchModeToggle
+            types={mediaBranchTypes}
+            value={mediaBranchMode}
+            busy={modeBusy}
+            disabled={stageLocked}
+            onChange={(mode) => {
+              void (async () => {
+                setModeBusy(true);
+                setError(null);
+                try {
+                  await stagesApi.setMediaBranchMode(stageId, mode);
+                  setMediaBranchMode(mode);
+                  setMessage(
+                    mode === 'ALL'
+                      ? 'Для закрытия этапа нужны все виды информации.'
+                      : `Для закрытия этапа обязателен вид: ${MEDIA_BRANCH_LABELS[mode] ?? mode}.`,
+                  );
+                } catch (err) {
+                  setError(
+                    err instanceof Error ? err.message : 'Не удалось сохранить вид информации',
+                  );
+                } finally {
+                  setModeBusy(false);
+                }
+              })();
+            }}
+          />
+        </div>
+      ) : null}
+
       {error ? <div className="alert-error mb-4 mt-4">{error}</div> : null}
       {message ? <div className="mb-4 mt-4 text-sm text-status-success">{message}</div> : null}
 
       {isReadOnly ? (
         <div className="card mt-4 border-status-warning/40 text-sm text-graphite">
-          Режим просмотра: загрузка, замена и удаление файлов недоступны, пока администратор не
+          Режим просмотра: загрузка, замена и удаление файлов недоступны, пока модератор не
           подтвердит ваши права доступа.
         </div>
       ) : null}
@@ -527,8 +610,8 @@ export default function StageUploadPage() {
       {stageStatus === 'CLOSED' && !isReadOnly ? (
         <div className="card mt-4 border-status-warning/40 text-sm text-graphite">
           {stageLocked
-            ? 'Этап закрыт. Загрузка, замена и удаление файлов недоступны — изменить состав материалов могут только главный врач и администратор.'
-            : 'Этап закрыт. Правки состава файлов доступны вам как главному врачу или администратору; статус этапа при этом сохраняется.'}
+            ? 'Этап закрыт. Загрузка, замена и удаление файлов недоступны — изменить состав материалов может только модератор.'
+            : 'Этап закрыт. Правки состава файлов доступны вам как модератору; статус этапа при этом сохраняется.'}
         </div>
       ) : null}
 
@@ -550,18 +633,34 @@ export default function StageUploadPage() {
           const req = ri.mediaRequirement;
           const currentAssets = assetsForRequirement(assets, ri.id, req.code);
           const assigned = currentAssets.length;
-          const effectivelyRequired = isRequirementEffectivelyRequired({
-            stageCode,
-            impressionCaptureMode,
-            code: req.code,
-            templateRequired: req.required,
-          });
-          const inactiveHint = requirementInactiveHint({
-            stageCode,
-            impressionCaptureMode,
-            code: req.code,
-            templateRequired: req.required,
-          });
+          const effectivelyRequired =
+            isRequirementEffectivelyRequired({
+              stageCode,
+              impressionCaptureMode,
+              code: req.code,
+              templateRequired: req.required,
+            }) &&
+            isMediaBranchRequirementActive({
+              stageCode,
+              mediaBranchMode,
+              mixedMediaBranches,
+              mediaType: req.mediaType,
+              templateRequired: req.required,
+            });
+          const inactiveHint =
+            requirementInactiveHint({
+              stageCode,
+              impressionCaptureMode,
+              code: req.code,
+              templateRequired: req.required,
+            }) ??
+            mediaBranchInactiveHint({
+              stageCode,
+              mediaBranchMode,
+              mixedMediaBranches,
+              mediaType: req.mediaType,
+              templateRequired: req.required,
+            });
           const needed = Math.max(req.minCount || (effectivelyRequired ? 1 : 0), 0);
           const maxCount = req.maxCount ?? null;
           const multiSlot = needed > 1 || (maxCount != null && maxCount > 1);
@@ -577,9 +676,13 @@ export default function StageUploadPage() {
               onDragOver={preventBrowserFileNavigation}
               onDrop={(e) => {
                 preventBrowserFileNavigation(e);
-                if (busy || stageLocked || req.mediaType === 'STL') return;
+                if (busy || stageLocked) return;
                 const list = e.dataTransfer.files;
                 if (!list?.length) return;
+                if (isScanRequirement(req)) {
+                  void setScanFiles(ri.id, list, req.code);
+                  return;
+                }
                 setFiles(ri.id, list, req.mediaType);
               }}
             >
@@ -675,7 +778,7 @@ export default function StageUploadPage() {
                   </div>
                   <ul className="space-y-1">
                     {currentAssets.map((asset, idx) => {
-                      const canDelete = currentAssets.length - 1 >= needed;
+                      const deletable = currentAssets.length - 1 >= needed;
                       return (
                         <li key={asset.id} className="flex items-center justify-between gap-2 text-xs">
                           <button
@@ -685,12 +788,13 @@ export default function StageUploadPage() {
                           >
                             #{idx + 1} · {asset.originalFileName ?? asset.originalFilename ?? asset.status}
                           </button>
+                          {canDelete ? (
                           <button
                             type="button"
                             className="text-accent underline-offset-2 hover:underline disabled:opacity-40"
-                            disabled={busy || stageLocked || !canDelete}
+                            disabled={busy || stageLocked || !deletable}
                             title={
-                              canDelete
+                              deletable
                                 ? 'Удалить этот файл'
                                 : 'Нельзя удалить: обязательный минимум'
                             }
@@ -698,6 +802,7 @@ export default function StageUploadPage() {
                           >
                             Удалить
                           </button>
+                          ) : null}
                         </li>
                       );
                     })}
@@ -712,7 +817,7 @@ export default function StageUploadPage() {
 
               <div>
                 <label className="label-field" htmlFor={`file-${ri.id}`}>
-                  {req.mediaType === 'STL'
+                  {isScanRequirement(req)
                     ? currentAssets.length
                       ? 'Заменить скан'
                       : 'Файлы скана для положения'
@@ -727,26 +832,33 @@ export default function StageUploadPage() {
                 <input
                   id={`file-${ri.id}`}
                   type="file"
-                  accept={ACCEPT_BY_TYPE[req.mediaType] ?? '*/*'}
                   className="input-field"
                   disabled={busy || stageLocked}
-                  multiple={req.mediaType === 'STL' || multiSlot}
+                  multiple={isScanRequirement(req) || multiSlot}
                   onChange={(e) => {
-                    if (req.mediaType === 'STL') {
+                    if (isScanRequirement(req)) {
                       void setScanFiles(ri.id, e.target.files, req.code);
                     } else {
                       setFiles(ri.id, e.target.files, req.mediaType);
                     }
                   }}
                 />
-                {req.mediaType === 'STL' ? (
-                  <p className="mt-1 text-[11px] text-gray-500">
-                    Exocad (цвет): выберите сразу{' '}
-                    <span className="font-medium text-graphite">.obj + .mtl + .jpg</span> одной
-                    челюсти (UpperJaw / LowerJaw / TotalJaw). Можно только .stl — без цвета. Situ не
-                    использовать. До {SCAN_MAX_BYTES / (1024 * 1024)} МБ.
-                  </p>
-                ) : null}
+                <p className="mt-1 text-[11px] text-gray-500">
+                  {isScanRequirement(req) ? (
+                    <>
+                      Exocad (цвет): выберите сразу{' '}
+                      <span className="font-medium text-graphite">.obj + .mtl + .jpg</span> одной
+                      челюсти (UpperJaw / LowerJaw / TotalJaw). Можно только .stl — без цвета. Situ не
+                      использовать. До {SCAN_MAX_BYTES / (1024 * 1024)} МБ. Если окно показывает только
+                      JPG — внизу справа выберите «Все файлы».
+                    </>
+                  ) : (
+                    <>
+                      Если в окне выбора видны только JPG — внизу справа откройте список типов и
+                      выберите «Все файлы».
+                    </>
+                  )}
+                </p>
                 {selected.length > 0 ? (
                   <div className="mt-1 text-xs text-gray-600">
                     К загрузке ({selected.length}):{' '}
@@ -762,12 +874,14 @@ export default function StageUploadPage() {
         })}
       </div>
 
-      {stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
+      {hasSliceCards || stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' ? (
         <div className="mt-4">
           <ImplantSliceCardsForm
             ref={sliceFormRef}
             stageId={stageId}
+            heading={sliceCardHeading}
             readOnly={stageLocked}
+            canDelete={canDelete}
             externalSaveControl
             onPendingChange={setSlicePending}
             onChanged={() => void load({ silent: true })}
@@ -775,7 +889,8 @@ export default function StageUploadPage() {
         </div>
       ) : null}
 
-      {(canUpload && protocolOrderedRequirements.length > 0) || slicePending > 0 ? (
+      {(canUpload && (protocolOrderedRequirements.length > 0 || hasSliceCards)) ||
+      slicePending > 0 ? (
         <div className="card mt-4 max-w-xl space-y-3">
           {progress !== null ? (
             <div>
@@ -806,6 +921,7 @@ export default function StageUploadPage() {
               >
                 Просмотреть загруженные ({protocolAssetsSorted.length})
               </button>
+              {canDelete ? (
               <button
                 type="button"
                 className="btn-secondary"
@@ -814,6 +930,7 @@ export default function StageUploadPage() {
               >
                 Удалить дубликаты этапа
               </button>
+              ) : null}
             </>
           ) : null}
         </div>

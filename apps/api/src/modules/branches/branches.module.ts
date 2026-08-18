@@ -55,7 +55,7 @@ export class BranchesController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles(UserRole.SYSTEM_ADMIN)
+  @Roles(UserRole.MODERATOR)
   @AuditAction('branch.create')
   create(@Body() dto: CreateBranchDto) {
     return this.prisma.branch.create({ data: dto });
@@ -63,7 +63,7 @@ export class BranchesController {
 
   @Patch(':id')
   @UseGuards(RolesGuard)
-  @Roles(UserRole.SYSTEM_ADMIN)
+  @Roles(UserRole.MODERATOR)
   @AuditAction('branch.update')
   update(@Param('id') id: string, @Body() dto: UpdateBranchDto) {
     return this.prisma.branch.update({ where: { id }, data: dto });

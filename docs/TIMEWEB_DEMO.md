@@ -1,110 +1,132 @@
-# Демо-выкладка на Timeweb Cloud
+# Выкладка на Timeweb Cloud — 176.98.177.79
 
-Цель: дать коллегам ссылку для согласования UI/сценариев (не боевая клиника).
+Сервис поднимается Docker Compose: Postgres, Redis, MinIO, API, Worker, Web, Nginx.
 
-## Что уже подготовлено в репозитории
+## Что уже подготовлено в проекте
 
 | Файл | Назначение |
 |------|------------|
-| `docker-compose.demo.yml` | Postgres, Redis, MinIO, API, Worker, Web, Nginx |
+| `docker-compose.demo.yml` | Весь стек |
 | `.env.demo.example` | Шаблон секретов и URL |
-| `infra/nginx/demo.conf` | Прокси `/` → web, `/api/` → API, `/storage/` → MinIO |
-| `infra/scripts/deploy-timeweb-demo.sh` | Скрипт запуска на Ubuntu |
+| `infra/nginx/demo.conf` | Прокси `/` → web, `/api/v1/` → API |
+| `infra/scripts/deploy-timeweb-demo.sh` | Сборка и запуск на Ubuntu |
 | `infra/scripts/prepare-demo-env.ps1` | Генерация `.env.demo` на Windows |
+| `infra/scripts/pack-for-timeweb.ps1` | Архив без node_modules и portable-инструментов |
 
-## Что делаете вы (обязательно)
+Гостевая главная, вход/регистрация и каталоги протокола входят в эту сборку.
 
-### 1. Создайте сервер в Timeweb
+## Что нужно сделать вам
 
-1. Зайдите на https://timeweb.cloud/
-2. Создайте **Cloud-сервер**:
-   - регион: **Москва**
-   - ОС: **Ubuntu 24.04**
-   - тариф: **Cloud MSK 80** (4 vCPU / 8 GB / 80+ GB NVMe) или выше
+### 1. Панель Timeweb
+
+1. Откройте https://timeweb.cloud/ → ваш Cloud-сервер `176.98.177.79`
+2. ОС: Ubuntu 22.04/24.04, желательно **от 4 vCPU / 8 GB RAM / 80+ GB NVMe**
 3. Включите **бэкапы**
-4. В firewall откройте порты **22, 80** (и **443**, если будете ставить SSL)
-5. Сохраните: **IP**, **root/пароль** или SSH-ключ
+4. В firewall откройте порты:
+   - **22** — SSH
+   - **80** — сайт
+   - **443** — HTTPS (позже)
+   - **9000** — MinIO (фото/видео по подписанным ссылкам)
+5. Скопируйте **пароль root** (или добавьте свой SSH-ключ в панель)
 
-### 2. Залейте код на сервер
+### 2. С вашего ПК (PowerShell, папка `E:\Foto_protokol`)
 
-С вашего ПК (PowerShell), из папки проекта:
+Архив и `.env.demo` уже собираются скриптами. Если файлов нет — выполните:
 
 ```powershell
-# Подставьте IP сервера
-$SERVER = "X.X.X.X"
-
-# Упаковать проект без node_modules
-tar -czf mandarin-demo.tgz `
-  --exclude=node_modules --exclude=.next --exclude=dist `
-  --exclude=tools/pgsql --exclude=tools/minio-data --exclude=tools/*.exe `
-  --exclude=.git .
-
-scp mandarin-demo.tgz root@${SERVER}:/root/
+cd E:\Foto_protokol
+powershell -ExecutionPolicy Bypass -File infra\scripts\prepare-demo-env.ps1 -PublicHost "176.98.177.79" -BootstrapEmail "ВАША_ПОЧТА"
+powershell -ExecutionPolicy Bypass -File infra\scripts\pack-for-timeweb.ps1
 ```
 
-Или через Git, если репозиторий на GitHub/GitLab:
+Затем залейте на сервер (пароль root спросит сам):
 
-```bash
-ssh root@X.X.X.X
-git clone <URL> /opt/mandarin-pp
+```powershell
+scp mandarin-timeweb-demo.tgz root@176.98.177.79:/root/
+scp .env.demo root@176.98.177.79:/root/env.demo
 ```
 
-### 3. На сервере: Docker + запуск
+**Важно:** если на сервере уже есть `/opt/mandarin-pp/.env.demo` от прошлой выкладки — **не перезаписывайте его**. Иначе сменятся пароль БД и JWT, старые данные перестанут открываться. Заливайте только архив.
+
+### 3. На сервере (первый запуск)
 
 ```bash
-ssh root@X.X.X.X
+ssh root@176.98.177.79
 
-# Docker
 apt-get update
-apt-get install -y docker.io docker-compose-v2 curl
+apt-get install -y docker.io docker-compose-v2 curl tar
 systemctl enable --now docker
 
-# Распаковать (если заливали архив)
 mkdir -p /opt/mandarin-pp
-tar -xzf /root/mandarin-demo.tgz -C /opt/mandarin-pp
+tar -xzf /root/mandarin-timeweb-demo.tgz -C /opt/mandarin-pp
 cd /opt/mandarin-pp
 
-# Env
-cp .env.demo.example .env.demo
+# только если .env.demo ещё нет:
+cp /root/env.demo .env.demo
 nano .env.demo
-# Обязательно замените:
-#   PUBLIC_HOST=ВАШ_IP_ИЛИ_ДОМЕН
-#   JWT_SECRET / SESSION_SECRET / POSTGRES_PASSWORD / S3_SECRET_ACCESS_KEY
-#   WEB_URL / API_URL / CORS_ORIGIN / S3_PUBLIC_ENDPOINT (подставьте тот же хост)
+# проверьте PUBLIC_HOST=176.98.177.79
+# проверьте BOOTSTRAP_ADMIN_EMAIL и BOOTSTRAP_ADMIN_PASSWORD
 
 chmod +x infra/scripts/deploy-timeweb-demo.sh infra/docker/api-entrypoint.sh
 bash infra/scripts/deploy-timeweb-demo.sh
 ```
 
-### 4. Отправьте коллегам
+Первая сборка образов занимает **10–20 минут**.
 
-- URL: `http://ВАШ_IP`
-- Логин: `admin@example.local`
-- Пароль: значение `DEMO_PASSWORD` из `.env.demo` (после seed также действует пароль из seed, если не переопределён)
-
-Демо-роли (пароль из seed по умолчанию `ChangeMe123!`, если не меняли логику seed):
-
-| Email | Роль |
-|-------|------|
-| admin@example.local | SYSTEM_ADMIN |
-| surgeon@example.local | SURGEON |
-| ortho@example.local | ORTHOPEDIST |
-
-> Если seed использует `DEMO_PASSWORD` из env — будет ваш пароль из `.env.demo`.
-
-### 5. HTTPS (желательно)
-
-Когда будет домен:
+### 4. Если сервис на этом IP уже стоял (обновление)
 
 ```bash
-apt-get install -y certbot
-certbot certonly --standalone -d your.domain.ru
-cp /etc/letsencrypt/live/your.domain.ru/fullchain.pem infra/nginx/certs/
-cp /etc/letsencrypt/live/your.domain.ru/privkey.pem infra/nginx/certs/
-# Раскомментировать SSL-блок в infra/nginx/demo.conf
-# В .env.demo заменить http:// на https://
-docker compose -f docker-compose.demo.yml --env-file .env.demo up -d nginx web api
+ssh root@176.98.177.79
+cd /opt/mandarin-pp
+# сохранить текущий env
+cp -a .env.demo /root/env.demo.bak
+tar -xzf /root/mandarin-timeweb-demo.tgz -C /opt/mandarin-pp
+cp -a /root/env.demo.bak .env.demo
+chmod +x infra/scripts/deploy-timeweb-demo.sh infra/docker/api-entrypoint.sh
+bash infra/scripts/deploy-timeweb-demo.sh
 ```
+
+### 5. Проверка
+
+В браузере: http://176.98.177.79
+
+- Главная открывается без входа
+- Слева кнопки **Вход** / **Регистрация**
+- Вход модератора — почта и пароль из `BOOTSTRAP_ADMIN_*` в `.env.demo`
+
+На сервере:
+
+```bash
+cd /opt/mandarin-pp
+docker compose -f docker-compose.demo.yml --env-file .env.demo ps
+curl -i http://127.0.0.1/api/v1/health
+```
+
+### 6. HTTPS
+
+Домен уже должен указывать A-записью на сервер, иначе Let's Encrypt не выдаст сертификат.
+
+```bash
+cd /opt/mandarin-pp
+sed -i 's/\r$//' infra/scripts/enable-https.sh infra/scripts/renew-cert.sh
+bash infra/scripts/enable-https.sh msi-fotoprotocol.ru ваша@почта
+```
+
+Скрипт выпускает сертификат, кладёт его в `infra/nginx/certs`, переключает `.env.demo`
+на `https://` (`NGINX_CONF`, `AUTH_COOKIE_SECURE`) и перезапускает api, web и nginx.
+Порт 80 остаётся открытым: с него идёт редирект на HTTPS и проверка домена при продлении.
+
+Сертификат живёт 90 дней. Автопродление раз в неделю:
+
+```bash
+crontab -e
+# добавить строкой:
+0 3 * * 1 cd /opt/mandarin-pp && bash infra/scripts/renew-cert.sh msi-fotoprotocol.ru >> /var/log/mandarin-cert.log 2>&1
+```
+
+Откат на HTTP, если что-то пошло не так: в `.env.demo` вернуть
+`NGINX_CONF=./infra/nginx/demo.conf`, адреса на `http://`, затем
+`docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --force-recreate nginx`.
 
 ## Полезные команды
 
@@ -115,16 +137,15 @@ docker compose -f docker-compose.demo.yml --env-file .env.demo logs -f api
 docker compose -f docker-compose.demo.yml --env-file .env.demo restart
 ```
 
-## Важно
-
-- Это **демо-контур**. Не загружайте реальные данные пациентов.
-- MinIO console наружу не открыт (только `/storage` для файлов).
-- Postgres/Redis снаружи не слушаются.
-- После согласования смените пароли или выключите сервер.
-
 ## Если что-то упало
 
 1. `docker compose -f docker-compose.demo.yml --env-file .env.demo logs api --tail=200`
-2. Проверьте, что в `.env.demo` нет `YOUR_DOMAIN`
-3. Проверьте `curl -i http://127.0.0.1/api/v1/health` на сервере
-4. Напишите в чат разработчику логи API + IP сервера (без паролей)
+2. В `.env.demo` не должно остаться `YOUR_DOMAIN`
+3. `curl -i http://127.0.0.1/api/v1/health`
+4. Пришлите логи API (без паролей из `.env.demo`)
+
+## Важно
+
+- Это контур клиники на одном VPS. Postgres, Redis и MinIO снаружи кроме порта 9000 не слушаются.
+- Демо-логины `*@example.local` отключены.
+- Файл `.env.demo` не коммитьте и не пересылайте в открытый чат.

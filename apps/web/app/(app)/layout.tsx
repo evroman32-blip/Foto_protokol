@@ -1,14 +1,23 @@
-import { AccountBar } from '@/components/AccountBar';
-import { Sidebar } from '@/components/Sidebar';
+import { cookies } from 'next/headers';
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+import { AccountBar } from '@/components/AccountBar';
+import { ConfirmDeleteProvider } from '@/components/ConfirmDeleteDialog';
+import { Sidebar } from '@/components/Sidebar';
+import { AUTH_COOKIE } from '@/lib/constants';
+
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const token = (await cookies()).get(AUTH_COOKIE)?.value;
+  const isGuest = !token;
+
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <AccountBar />
-        <main className="flex-1 overflow-x-hidden bg-surface-muted p-6 lg:p-8">{children}</main>
+    <ConfirmDeleteProvider>
+      <div className="flex min-h-screen">
+        <Sidebar isGuest={isGuest} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AccountBar isGuest={isGuest} />
+          <main className="flex-1 overflow-x-hidden bg-surface-muted p-6 lg:p-8">{children}</main>
+        </div>
       </div>
-    </div>
+    </ConfirmDeleteProvider>
   );
 }

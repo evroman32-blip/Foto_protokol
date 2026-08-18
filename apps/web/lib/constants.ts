@@ -1,12 +1,28 @@
 export const AUTH_TOKEN_KEY = 'mandarin_auth_token';
 export const AUTH_COOKIE = 'mandarin_auth_token';
 
-/** Browser: NEXT_PUBLIC_API_URL (can be same-origin ''). Server: API_URL → Nest. */
+function cleanApiBase(value: string | undefined, fallback: string): string {
+  const raw = (value ?? '').replace(/[\u0000-\u001F]+/g, '').trim().replace(/\/+$/, '');
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw);
+    if (url.hostname === 'localhost') url.hostname = '127.0.0.1';
+    return url.origin;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Browser: empty NEXT_PUBLIC_API_URL = same origin (nginx /api/v1).
+ * Never fall back to 127.0.0.1 in the browser — that is the visitor's PC, not the server.
+ * Server: API_URL inside Docker → Nest.
+ */
 export const API_BASE = (
-  (typeof window === 'undefined'
-    ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL
-    : process.env.NEXT_PUBLIC_API_URL) ?? 'http://localhost:3001'
-).replace(/\/$/, '');
+  typeof window === 'undefined'
+    ? cleanApiBase(process.env.API_URL || process.env.NEXT_PUBLIC_API_URL, 'http://127.0.0.1:3001')
+    : cleanApiBase(process.env.NEXT_PUBLIC_API_URL, '')
+);
 
 export const BRAND = {
   title: 'Mandarin PhotoProtocol',
@@ -56,19 +72,21 @@ export const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
   DENTAL_TECHNICIAN: 'Зубной техник',
 };
 
-export const USER_ROLE_LABELS: Record<string, string> = {
-  SYSTEM_ADMIN: 'Администратор',
-  CHIEF_DOCTOR: 'Главный врач',
-  ORTHOPEDIC_MANAGER: 'Ортопед-менеджер',
-  SURGEON: 'Хирург',
-  ORTHOPEDIST: 'Ортопед',
-  CONSULTING_DOCTOR: 'Консультирующий врач',
-  DENTAL_TECHNICIAN: 'Зубной техник',
-  ASSISTANT: 'Ассистент',
-  RADIOLOGY_OPERATOR: 'Рентген-лаборант',
-  AUDITOR: 'Аудитор',
-  EXPERT: 'Эксперт',
-};
+export {
+  JOB_TITLES,
+  JOB_TITLES_REQUIRING_SPECIALIZATION,
+  SPECIALIZATIONS,
+  STAFF_CLINICAL_ROLE_LABELS,
+  StaffClinicalRole,
+  USER_ROLE_LABELS,
+  jobTitleRequiresSpecialization,
+  isModeratorRole,
+  canEditStaffAndPatients,
+  canEditPatients,
+  canCreateClinicalCase,
+  canEditClosedStage,
+  canCloseStage,
+} from '@mandarin/contracts';
 
 export const ACCOUNT_STATUS_LABELS: Record<string, string> = {
   PENDING: 'Ожидает подтверждения',

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
 import { LoadingState } from '@/components/States';
@@ -12,6 +12,10 @@ import {
   type ProtocolVersionDto,
   type StageTemplateAdminDto,
 } from '@/lib/api';
+import { confirmDelete } from '@/lib/confirm-delete';
+import { mergePositionNameCatalog } from '@/lib/position-names';
+import { useCurrentUser } from '@/lib/use-current-user';
+import { SearchableTextSelect } from '@/components/SearchableTextSelect';
 
 const MEDIA_TYPES = [
   { value: 'PHOTO', label: 'Фото' },
@@ -129,10 +133,12 @@ function RequirementFields({
   value,
   onChange,
   codeEditable,
+  nameCatalog,
 }: {
   value: LocalRequirement;
   onChange: (patch: Partial<LocalRequirement>) => void;
   codeEditable: boolean;
+  nameCatalog: string[];
 }) {
   const instruction = value.instruction ?? '';
 
@@ -141,16 +147,17 @@ function RequirementFields({
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="sm:col-span-2">
           <label className="label-field">Название положения</label>
-          <input
-            className="input-field"
+          <SearchableTextSelect
             value={value.name}
-            placeholder="Анфас в покое"
-            onChange={(e) => {
-              const name = e.target.value;
+            options={nameCatalog}
+            placeholder="Начните вводить название"
+            onChange={(name) => {
+              const looksLikeScan = /скан|stl|obj|3d/i.test(name);
               onChange({
                 name,
                 dirty: true,
                 code: codeEditable ? slugifyCode(name) : value.code,
+                ...(looksLikeScan && value.mediaType === 'PHOTO' ? { mediaType: 'STL' } : {}),
               });
             }}
           />
@@ -168,6 +175,11 @@ function RequirementFields({
               </option>
             ))}
           </select>
+          {value.mediaType === 'STL' ? (
+            <p className="mt-1 text-xs text-gray-500">
+              Для 3D-скана выбирайте этот тип — иначе окно Windows покажет только JPG.
+            </p>
+          ) : null}
         </div>
         <div>
           <label className="label-field">Мин. кол-во</label>
@@ -248,6 +260,7 @@ function RequirementFields({
 
 export default function ProtocolVersionPage() {
   const { id: protocolId, versionId } = useParams<{ id: string; versionId: string }>();
+  const { canDelete } = useCurrentUser();
   const [version, setVersion] = useState<ProtocolVersionDto | null>(null);
   const [templates, setTemplates] = useState<StageTemplateAdminDto[]>([]);
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
@@ -257,7 +270,7 @@ export default function ProtocolVersionPage() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showList, setShowList] = useState(false);
+  const [showList, setShowList] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const editRef = useRef<HTMLDivElement | null>(null);
@@ -294,7 +307,7 @@ export default function ProtocolVersionPage() {
     setEditingKey(null);
     setStageName(template.name);
     setStageSortOrder(template.sortOrder);
-    setShowList(false);
+    setShowList(true);
   }
 
   function openStage(template: StageTemplateAdminDto) {
@@ -346,10 +359,11 @@ export default function ProtocolVersionPage() {
 
   async function deleteStage(template: StageTemplateAdminDto, e: MouseEvent) {
     e.stopPropagation();
+    if (!canDelete) return;
     if (
-      !window.confirm(
+      !(await confirmDelete(
         `Удалить этап «${template.name}» (${template.code}) из протокола?\nПоложения этапа тоже будут удалены. Если в случаях уже есть файлы по этапу — удаление будет отклонено.`,
-      )
+      ))
     ) {
       return;
     }
@@ -374,6 +388,10 @@ export default function ProtocolVersionPage() {
   const activeTemplate = templates.find((t) => t.id === activeStageId) ?? null;
   const existingItems = items.filter((i) => i.existingId);
   const newItems = items.filter((i) => !i.existingId);
+  const positionNameCatalog = useMemo(
+    () => mergePositionNameCatalog(items.map((item) => item.name)),
+    [items],
+  );
 
   function patchItem(key: string, patch: Partial<LocalRequirement>) {
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)));
@@ -405,7 +423,8 @@ export default function ProtocolVersionPage() {
       removeNewItem(item.key);
       return;
     }
-    if (!window.confirm(`Удалить положение «${item.name || item.code}» из шаблона?`)) return;
+    if (item.existingId && !canDelete) return;
+    if (!(await confirmDelete(`Удалить положение «${item.name || item.code}» из шаблона?`))) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -565,6 +584,7 @@ export default function ProtocolVersionPage() {
                   >
                     {open ? 'Свернуть' : 'Настроить этап'}
                   </button>
+                  {canDelete ? (
                   <button
                     type="button"
                     className="btn-secondary !px-2 !py-1 text-xs text-status-danger"
@@ -573,6 +593,7 @@ export default function ProtocolVersionPage() {
                   >
                     Удалить
                   </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -659,6 +680,7 @@ export default function ProtocolVersionPage() {
                                   >
                                     {isEditing ? 'Закрыть' : 'Изменить'}
                                   </button>
+                                  {canDelete || !item.existingId ? (
                                   <button
                                     type="button"
                                     className="btn-secondary !px-2 !py-1 text-xs text-status-danger"
@@ -667,6 +689,7 @@ export default function ProtocolVersionPage() {
                                   >
                                     Удалить
                                   </button>
+                                  ) : null}
                                 </div>
                               </div>
 
@@ -683,6 +706,7 @@ export default function ProtocolVersionPage() {
                                   <RequirementFields
                                     value={item}
                                     codeEditable={!item.existingId}
+                                    nameCatalog={positionNameCatalog}
                                     onChange={(patch) => patchItem(item.key, patch)}
                                   />
                                 </div>

@@ -5,8 +5,15 @@
 // --- Enums (runtime + type-safe) ---
 
 export enum UserRole {
-  SYSTEM_ADMIN = 'SYSTEM_ADMIN',
+  /** Полные права управления сайтом. Не путать с должностью «Администратор клиники». */
+  MODERATOR = 'MODERATOR',
+  EXECUTIVE_DIRECTOR = 'EXECUTIVE_DIRECTOR',
+  CLINIC_MANAGER = 'CLINIC_MANAGER',
+  CLINIC_ADMINISTRATOR = 'CLINIC_ADMINISTRATOR',
+  /** Права как у управляющего клиникой. */
+  TREATMENT_CURATOR = 'TREATMENT_CURATOR',
   CHIEF_DOCTOR = 'CHIEF_DOCTOR',
+  /** Устаревшая роль руководства; права как у управляющего клиникой. */
   ORTHOPEDIC_MANAGER = 'ORTHOPEDIC_MANAGER',
   SURGEON = 'SURGEON',
   ORTHOPEDIST = 'ORTHOPEDIST',
@@ -17,6 +24,148 @@ export enum UserRole {
   AUDITOR = 'AUDITOR',
   EXPERT = 'EXPERT',
 }
+
+export const USER_ROLE_LABELS: Record<string, string> = {
+  MODERATOR: 'Модератор',
+  SYSTEM_ADMIN: 'Модератор',
+  EXECUTIVE_DIRECTOR: 'Исполнительный директор',
+  CLINIC_MANAGER: 'Управляющий клиникой',
+  CLINIC_ADMINISTRATOR: 'Администратор клиники',
+  TREATMENT_CURATOR: 'Куратор лечения',
+  CHIEF_DOCTOR: 'Главный врач',
+  ORTHOPEDIC_MANAGER: 'Управляющий клиникой',
+  SURGEON: 'Хирург',
+  ORTHOPEDIST: 'Ортопед',
+  CONSULTING_DOCTOR: 'Консультирующий врач',
+  DENTAL_TECHNICIAN: 'Зубной техник',
+  ASSISTANT: 'Ассистент',
+  RADIOLOGY_OPERATOR: 'Рентген-лаборант',
+  AUDITOR: 'Аудитор',
+  EXPERT: 'Эксперт',
+};
+
+/** Полные права управления сайтом. Генеральный директор = модератор. `SYSTEM_ADMIN` — прежнее имя. */
+export function isModeratorRole(role: string | null | undefined): boolean {
+  return role === UserRole.MODERATOR || role === 'SYSTEM_ADMIN';
+}
+
+export function isDoctorRole(role: string | null | undefined): boolean {
+  return (
+    role === UserRole.CHIEF_DOCTOR ||
+    role === UserRole.SURGEON ||
+    role === UserRole.ORTHOPEDIST ||
+    role === UserRole.CONSULTING_DOCTOR
+  );
+}
+
+export function isExpertRole(role: string | null | undefined): boolean {
+  return role === UserRole.EXPERT;
+}
+
+/** Для эксперта ФИО пациента скрывается — остаётся номер карты. */
+export function maskPatientFio<T>(patient: T): T {
+  return {
+    ...(patient as object),
+    lastName: '',
+    firstName: '',
+    middleName: null,
+  } as T;
+}
+
+/** Должность со словом «врач» (главный врач, врач стоматолог, врач и т.д.). */
+export function isDoctorJobTitle(position: string | null | undefined): boolean {
+  return Boolean(position && /врач/i.test(position));
+}
+
+export function isClinicalDoctor(
+  role: string | null | undefined,
+  position?: string | null,
+): boolean {
+  return isDoctorRole(role) || isDoctorJobTitle(position);
+}
+
+/** Управляющий клиникой, куратор лечения и прежняя роль ортопед-менеджер. */
+export function isClinicManagerRole(role: string | null | undefined): boolean {
+  return (
+    role === UserRole.CLINIC_MANAGER ||
+    role === UserRole.TREATMENT_CURATOR ||
+    role === UserRole.ORTHOPEDIC_MANAGER
+  );
+}
+
+/** Карточки сотрудников: ИД, управляющий/куратор, администратор клиники, главный врач (+ модератор). */
+export function canEditStaffAndPatients(role: string | null | undefined): boolean {
+  return (
+    isModeratorRole(role) ||
+    role === UserRole.EXECUTIVE_DIRECTOR ||
+    isClinicManagerRole(role) ||
+    role === UserRole.CLINIC_ADMINISTRATOR ||
+    role === UserRole.CHIEF_DOCTOR
+  );
+}
+
+/** Карточки пациентов: те же роли, что и сотрудники, плюс все врачи. */
+export function canEditPatients(
+  role: string | null | undefined,
+  position?: string | null,
+): boolean {
+  return canEditStaffAndPatients(role) || isClinicalDoctor(role, position);
+}
+
+/** Создавать случай: все врачи (роль или должность со словом «врач»), управляющий/куратор, администратор клиники (+ модератор). */
+export function canCreateClinicalCase(
+  role: string | null | undefined,
+  position?: string | null,
+): boolean {
+  return (
+    isModeratorRole(role) ||
+    isClinicalDoctor(role, position) ||
+    isClinicManagerRole(role) ||
+    role === UserRole.CLINIC_ADMINISTRATOR
+  );
+}
+
+/** После закрытия этап правит только модератор. */
+export function canEditClosedStage(role: string | null | undefined): boolean {
+  return isModeratorRole(role);
+}
+
+/** Закрыть этап: главный врач или врач, который начал этап (+ модератор). */
+export function canCloseStage(
+  role: string | null | undefined,
+  actorUserId: string,
+  startedByUserId?: string | null,
+): boolean {
+  if (isModeratorRole(role) || role === UserRole.CHIEF_DOCTOR) return true;
+  return Boolean(startedByUserId && startedByUserId === actorUserId);
+}
+
+export const STAFF_PATIENT_EDITOR_ROLES: UserRole[] = [
+  UserRole.EXECUTIVE_DIRECTOR,
+  UserRole.CLINIC_MANAGER,
+  UserRole.TREATMENT_CURATOR,
+  UserRole.CLINIC_ADMINISTRATOR,
+  UserRole.CHIEF_DOCTOR,
+  UserRole.ORTHOPEDIC_MANAGER,
+];
+
+export const PATIENT_EDITOR_ROLES: UserRole[] = [
+  ...STAFF_PATIENT_EDITOR_ROLES,
+  UserRole.SURGEON,
+  UserRole.ORTHOPEDIST,
+  UserRole.CONSULTING_DOCTOR,
+];
+
+export const CASE_CREATOR_ROLES: UserRole[] = [
+  UserRole.CHIEF_DOCTOR,
+  UserRole.SURGEON,
+  UserRole.ORTHOPEDIST,
+  UserRole.CONSULTING_DOCTOR,
+  UserRole.CLINIC_MANAGER,
+  UserRole.TREATMENT_CURATOR,
+  UserRole.CLINIC_ADMINISTRATOR,
+  UserRole.ORTHOPEDIC_MANAGER,
+];
 
 export enum UserAccountStatus {
   PENDING = 'PENDING',
@@ -29,6 +178,110 @@ export enum ParticipantRole {
   ORTHOPEDIST = 'ORTHOPEDIST',
   SURGEON = 'SURGEON',
   DENTAL_TECHNICIAN = 'DENTAL_TECHNICIAN',
+}
+
+/** Клинические роли на карточке сотрудника (назначает только модератор). */
+export enum StaffClinicalRole {
+  CONSULTING_DOCTOR = 'CONSULTING_DOCTOR',
+  ORTHOPEDIST = 'ORTHOPEDIST',
+  SURGEON_DENTIST = 'SURGEON_DENTIST',
+  DENTAL_TECHNICIAN = 'DENTAL_TECHNICIAN',
+  ANESTHESIOLOGIST = 'ANESTHESIOLOGIST',
+  ENT_SURGEON = 'ENT_SURGEON',
+}
+
+export const STAFF_CLINICAL_ROLE_LABELS: Record<StaffClinicalRole, string> = {
+  [StaffClinicalRole.CONSULTING_DOCTOR]: 'Консультирующий врач',
+  [StaffClinicalRole.ORTHOPEDIST]: 'Ортопед',
+  [StaffClinicalRole.SURGEON_DENTIST]: 'Стоматолог-хирург',
+  [StaffClinicalRole.DENTAL_TECHNICIAN]: 'Зубной техник',
+  [StaffClinicalRole.ANESTHESIOLOGIST]: 'Анестезиолог',
+  [StaffClinicalRole.ENT_SURGEON]: 'ЛОР-хирург',
+};
+
+export const JOB_TITLES = [
+  'Генеральный директор',
+  'Исполнительный директор',
+  'Управляющий клиникой',
+  'Администратор клиники',
+  'Куратор лечения',
+  'Главный врач',
+  'Врач стоматолог',
+  'Зубной техник',
+  'Гигиенист',
+  'Врач',
+  'Ассистент',
+] as const;
+
+export const JOB_TITLE_ALIASES: Record<string, string> = {
+  'Управляющий филиалом': 'Управляющий клиникой',
+  Администратор: 'Администратор клиники',
+};
+
+export function normalizeJobTitle(position: string): string {
+  return JOB_TITLE_ALIASES[position] ?? position;
+}
+
+export const ACCEPTED_JOB_TITLES: readonly string[] = [
+  ...JOB_TITLES,
+  ...Object.keys(JOB_TITLE_ALIASES),
+];
+
+export type JobTitle = (typeof JOB_TITLES)[number];
+
+export const JOB_TITLES_REQUIRING_SPECIALIZATION: readonly JobTitle[] = [
+  'Главный врач',
+  'Врач стоматолог',
+  'Зубной техник',
+  'Гигиенист',
+  'Врач',
+  'Ассистент',
+];
+
+export const SPECIALIZATIONS = [
+  'Стоматология',
+  'ЧЛХ',
+  'Хирургия',
+  'Ортопедия',
+  'Гигиена ПР',
+  'ЛОР',
+  'Анестезиология',
+] as const;
+
+export type Specialization = (typeof SPECIALIZATIONS)[number];
+
+export function jobTitleRequiresSpecialization(position: string): boolean {
+  return (JOB_TITLES_REQUIRING_SPECIALIZATION as readonly string[]).includes(position);
+}
+
+export function requestedRoleFromJob(position: string, specialization?: string | null): UserRole {
+  switch (normalizeJobTitle(position)) {
+    case 'Генеральный директор':
+      return UserRole.MODERATOR;
+    case 'Исполнительный директор':
+      return UserRole.EXECUTIVE_DIRECTOR;
+    case 'Управляющий клиникой':
+      return UserRole.CLINIC_MANAGER;
+    case 'Администратор клиники':
+      return UserRole.CLINIC_ADMINISTRATOR;
+    case 'Куратор лечения':
+      return UserRole.TREATMENT_CURATOR;
+    case 'Главный врач':
+      return UserRole.CHIEF_DOCTOR;
+    case 'Зубной техник':
+      return UserRole.DENTAL_TECHNICIAN;
+    case 'Гигиенист':
+    case 'Ассистент':
+      return UserRole.ASSISTANT;
+    case 'Врач стоматолог':
+    case 'Врач':
+      if (specialization === 'Хирургия' || specialization === 'ЧЛХ') return UserRole.SURGEON;
+      if (specialization === 'Ортопедия') return UserRole.ORTHOPEDIST;
+      if (specialization === 'Гигиена ПР') return UserRole.ASSISTANT;
+      return UserRole.CONSULTING_DOCTOR;
+    default:
+      return UserRole.EXPERT;
+  }
 }
 
 export enum StageCode {
@@ -49,6 +302,73 @@ export enum StageCode {
 export enum ImpressionCaptureMode {
   SCAN = 'SCAN',
   IMPRESSION = 'IMPRESSION',
+}
+
+/** Выбор ветки комплектности на этапе с разными типами медиа. ALL = нужны все виды. */
+export const MEDIA_BRANCH_ALL = 'ALL';
+
+const MEDIA_BRANCH_TYPES = new Set(['PHOTO', 'VIDEO', 'DOCUMENT', 'STL', 'RADIOLOGY_IMAGE']);
+
+export const MEDIA_BRANCH_LABELS: Record<string, string> = {
+  PHOTO: 'Фото',
+  VIDEO: 'Видео',
+  DOCUMENT: 'Документ',
+  STL: '3D-скан',
+  RADIOLOGY_IMAGE: 'Рентген',
+  ALL: 'Все виды',
+};
+
+export const IMPLANT_SLICE_CARDS_SPECIAL_RULE = 'everyImplantHasJpgSliceCard';
+export const POSTOP_IMPLANT_SLICE_CARDS_CODE = 'POSTOP_IMPLANT_SLICE_CARDS';
+
+/** Положение «Карточки срезов имплантатов (JPG)» — и встроенный код, и код из нового протокола. */
+export function isImplantSliceCardsRequirement(req: {
+  code?: string | null;
+  name?: string | null;
+  specialRule?: string | null;
+}): boolean {
+  if (req.specialRule === IMPLANT_SLICE_CARDS_SPECIAL_RULE) return true;
+  const code = String(req.code ?? '').toUpperCase();
+  if (code === POSTOP_IMPLANT_SLICE_CARDS_CODE) return true;
+  if (code === 'KARTOCHKI_SREZOV_IMPLANTATOV_JPG' || code.startsWith('KARTOCHKI_SREZOV_IMPLANTATOV')) {
+    return true;
+  }
+  const name = String(req.name ?? '').toLocaleLowerCase('ru');
+  return name.includes('карточки срезов имплантат');
+}
+
+export function listMediaBranchTypes(
+  requirements: Array<{
+    required?: boolean;
+    mediaType?: string;
+    code?: string;
+    name?: string;
+    specialRule?: string | null;
+  }>,
+): string[] {
+  const types = new Set<string>();
+  for (const req of requirements) {
+    if (!req.required) continue;
+    const code = req.code ?? '';
+    if (code === 'ADDITIONAL_MEDIA' || code.endsWith('_ADDITIONAL_MEDIA')) continue;
+    if (isImplantSliceCardsRequirement(req)) continue;
+    const mediaType = String(req.mediaType ?? '');
+    if (!MEDIA_BRANCH_TYPES.has(mediaType)) continue;
+    types.add(mediaType);
+  }
+  return [...types].sort();
+}
+
+export function hasMixedMediaBranches(
+  requirements: Array<{
+    required?: boolean;
+    mediaType?: string;
+    code?: string;
+    name?: string;
+    specialRule?: string | null;
+  }>,
+): boolean {
+  return listMediaBranchTypes(requirements).length >= 2;
 }
 
 export enum StageOwnerRole {
@@ -304,6 +624,8 @@ export interface StageCompletenessInput {
   };
   /** SCAN | IMPRESSION | null — только для IMPRESSIONS_OR_SCANS */
   impressionCaptureMode?: ImpressionCaptureMode | 'SCAN' | 'IMPRESSION' | null;
+  /** PHOTO | VIDEO | STL | … | ALL | null — этап с несколькими типами медиа */
+  mediaBranchMode?: string | null;
   emergencyEventsCount?: number;
 }
 
@@ -315,6 +637,7 @@ export interface StageClosureContext {
   closingUserId: string;
   closingUserRole: UserRole | string;
   closingUserStaffMemberId?: string | null;
+  startedByUserId?: string | null;
   primaryParticipants: Array<{
     role: ParticipantRole | string;
     staffMemberId: string;

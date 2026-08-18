@@ -1,14 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { StageInstanceStatus, UserRole } from '@mandarin/contracts';
+import { StageInstanceStatus, canEditClosedStage } from '@mandarin/contracts';
 
 import type { AuthUser } from '../decorators/current-user.decorator';
 import { PrismaService } from './prisma.service';
 
-/** Кто может править состав файлов уже закрытого этапа. */
-const CLOSED_STAGE_EDITOR_ROLES: string[] = [UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR];
-
 export const CLOSED_STAGE_MEDIA_MESSAGE =
-  'Этап закрыт: менять состав загруженных файлов могут только главный врач и администратор.';
+  'Этап закрыт: менять состав загруженных файлов может только модератор.';
 
 /**
  * Единая проверка для всех операций, меняющих состав медиаматериалов этапа
@@ -19,19 +16,39 @@ export class StageMediaAccessService {
   constructor(private readonly prisma: PrismaService) {}
 
   canEditClosedStage(user?: AuthUser | null): boolean {
-    return Boolean(user && CLOSED_STAGE_EDITOR_ROLES.includes(user.role));
+    return Boolean(user && canEditClosedStage(user.role));
+  }
+
+  async ensureStageStarted(stageInstanceId: string, userId: string): Promise<void> {
+    const stage = await this.prisma.stageInstance.findUnique({
+      where: { id: stageInstanceId },
+      select: { startedByUserId: true, openedAt: true, status: true },
+    });
+    if (!stage || stage.status === StageInstanceStatus.CLOSED) return;
+    if (stage.startedByUserId) return;
+    await this.prisma.stageInstance.update({
+      where: { id: stageInstanceId },
+      data: {
+        startedByUserId: userId,
+        openedAt: stage.openedAt ?? new Date(),
+      },
+    });
   }
 
   /** Возвращает статус этапа, чтобы вызывающий код не сбрасывал CLOSED. */
   async assertCanMutateStage(stageInstanceId: string, user: AuthUser): Promise<string> {
     const stage = await this.prisma.stageInstance.findUnique({
       where: { id: stageInstanceId },
-      select: { status: true },
+      select: { status: true, startedByUserId: true, openedAt: true },
     });
     if (!stage) throw new NotFoundException('Этап не найден');
 
     if (stage.status === StageInstanceStatus.CLOSED && !this.canEditClosedStage(user)) {
       throw new ForbiddenException(CLOSED_STAGE_MEDIA_MESSAGE);
+    }
+
+    if (stage.status !== StageInstanceStatus.CLOSED) {
+      await this.ensureStageStarted(stageInstanceId, user.id);
     }
 
     return stage.status;

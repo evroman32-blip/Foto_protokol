@@ -6,27 +6,48 @@ Set-Location $root
 
 if (Test-Path $out) { Remove-Item $out -Force }
 
-# Prefer tar (Windows 10+)
-$excludes = @(
-  "--exclude=node_modules",
-  "--exclude=.next",
-  "--exclude=dist",
-  "--exclude=.git",
-  "--exclude=.turbo",
-  "--exclude=tools/pgsql",
-  "--exclude=tools/minio-data",
-  "--exclude=tools/redis",
-  "--exclude=tools/redis-data",
-  "--exclude=tools/*.exe",
-  "--exclude=tools/*.zip",
-  "--exclude=.env",
-  "--exclude=.env.demo",
-  "--exclude=mandarin-timeweb-demo.tgz",
-  "--exclude=*.log"
+$items = @(
+  "apps",
+  "packages",
+  "infra",
+  "docs",
+  "docker-compose.demo.yml",
+  "docker-compose.yml",
+  "package.json",
+  "package-lock.json",
+  "turbo.json",
+  "tsconfig.base.json",
+  ".env.demo.example",
+  ".dockerignore",
+  ".gitignore",
+  ".npmrc",
+  "README.md",
+  "tools/sync-jaw-relation-requirements.ts"
 )
 
+foreach ($item in $items) {
+  if (-not (Test-Path -LiteralPath $item)) {
+    throw "Missing $item"
+  }
+}
+
 Write-Host "Packing $root -> $out"
-& tar -czf $out @excludes .
-Write-Host "Done: $out"
-Write-Host "Upload: scp mandarin-timeweb-demo.tgz root@SERVER_IP:/root/"
+& tar -czf $out `
+  --exclude=node_modules `
+  --exclude=.next `
+  --exclude=dist `
+  --exclude=.turbo `
+  --exclude=*.log `
+  --exclude=*.tsbuildinfo `
+  --exclude=.env.local `
+  --exclude=apps/web/.env.local `
+  @items
+
+if ($LASTEXITCODE -ne 0) { throw "tar failed: $LASTEXITCODE" }
+$sizeMb = [math]::Round((Get-Item $out).Length / 1MB, 1)
+Write-Host "Done: $out ($sizeMb MB)"
+Write-Host "Upload code:  scp mandarin-timeweb-demo.tgz root@176.98.177.79:/root/"
+if (Test-Path (Join-Path $root ".env.demo")) {
+  Write-Host "Upload env:   scp .env.demo root@176.98.177.79:/root/env.demo"
+}
 Write-Host "Then follow docs/TIMEWEB_DEMO.md"

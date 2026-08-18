@@ -6,6 +6,7 @@ import { PrismaService } from '../../common/services/prisma.service';
 import { StageMediaAccessService } from '../../common/services/stage-media-access.service';
 import { AuditAction } from '../../common/decorators/metadata.decorators';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { assertCanDelete } from '../../common/assert-can-delete';
 import { Module } from '@nestjs/common';
 
 class CreateRadiologyDto {
@@ -77,6 +78,7 @@ export class RadiologyController {
   @Delete(':id')
   @AuditAction('radiology.delete')
   async remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    assertCanDelete(user);
     await this.stageAccess.assertCanMutateByRadiologyStudy(id, user);
     return this.prisma.radiologyStudy.delete({ where: { id } });
   }

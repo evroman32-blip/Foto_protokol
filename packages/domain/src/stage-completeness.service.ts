@@ -6,14 +6,18 @@ import {
   StageCompletenessInput,
   UserRole,
   ParticipantRole,
+  canCloseStage,
+  hasMixedMediaBranches,
+  MEDIA_BRANCH_ALL,
+  isImplantSliceCardsRequirement,
 } from '@mandarin/contracts';
 
 const REQUIRED_PARTICIPANTS: ParticipantRole[] = [
-    ParticipantRole.CONSULTING_DOCTOR,
-    ParticipantRole.ORTHOPEDIST,
-    ParticipantRole.SURGEON,
-    ParticipantRole.DENTAL_TECHNICIAN,
-  ];
+  ParticipantRole.CONSULTING_DOCTOR,
+  ParticipantRole.ORTHOPEDIST,
+  ParticipantRole.SURGEON,
+  ParticipantRole.DENTAL_TECHNICIAN,
+];
 
 const NON_COUNTABLE_STATUSES = new Set([
   'TECHNICALLY_REJECTED',
@@ -30,29 +34,44 @@ const IMP_PHOTO_CODES = new Set([
 ]);
 
 /**
- * Учитывает переключатель скан/оттиск на этапе IMPRESSIONS_OR_SCANS.
+ * Учитывает переключатель скан/оттиск и выбор вида медиа на смешанном этапе.
  * Шаблонные required=true сохраняются; runtime-режим снимает блокировку с неактивной ветки.
  */
 export function isMediaRequirementEffectivelyRequired(opts: {
   stageCode: string;
   impressionCaptureMode?: 'SCAN' | 'IMPRESSION' | null;
+  mediaBranchMode?: string | null;
+  mixedMediaBranches?: boolean;
   code: string;
+  mediaType?: string;
   templateRequired: boolean;
 }): boolean {
   if (!opts.templateRequired) return false;
   if (opts.code === 'ADDITIONAL_MEDIA' || opts.code.endsWith('_ADDITIONAL_MEDIA')) {
     return false;
   }
-  if (opts.stageCode !== 'IMPRESSIONS_OR_SCANS') return true;
+  if (opts.stageCode === 'IMPRESSIONS_OR_SCANS') {
+    const isScan = IMP_SCAN_CODES.has(opts.code);
+    const isPhoto = IMP_PHOTO_CODES.has(opts.code);
+    if (!isScan && !isPhoto) return true;
 
-  const isScan = IMP_SCAN_CODES.has(opts.code);
-  const isPhoto = IMP_PHOTO_CODES.has(opts.code);
-  if (!isScan && !isPhoto) return true;
+    const mode = opts.impressionCaptureMode as string | null | undefined;
+    if (!mode) return false;
+    if (mode === 'SCAN') return isScan;
+    if (mode === 'IMPRESSION') return isPhoto;
+    return true;
+  }
 
-  const mode = opts.impressionCaptureMode as string | null | undefined;
-  if (!mode) return false;
-  if (mode === 'SCAN') return isScan;
-  if (mode === 'IMPRESSION') return isPhoto;
+  if (opts.mixedMediaBranches) {
+    if (!opts.mediaBranchMode) return false;
+    if (
+      opts.mediaBranchMode !== MEDIA_BRANCH_ALL &&
+      opts.mediaType &&
+      opts.mediaType !== opts.mediaBranchMode
+    ) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -91,8 +110,8 @@ export class StageCompletenessService {
 
     if (input.stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL') {
       this.checkSurgicalRadiology(input, result);
-    } else if (!input.doctorConfirmationPresent) {
-      pushUnique(result.blockingReasons, 'Отсутствует подтверждение врача.');
+    } else if (input.requirements.some((req) => isImplantSliceCardsRequirement(req))) {
+      this.checkImplantSliceCards(input, result);
     }
 
     this.checkOwnership(input, result);
@@ -119,38 +138,12 @@ export class StageCompletenessService {
       blockingReasons.push(...completeness.blockingReasons);
     }
 
-    const ownerParticipantRole = this.ownerRoleToParticipantRole(
-      context.stageTemplateOwnerRole as OwnerRole,
-    );
-
-    if (ownerParticipantRole) {
-      const primaryOwner = context.primaryParticipants.find(
-        (p) => p.role === ownerParticipantRole && p.isPrimary,
+    if (
+      !canCloseStage(context.closingUserRole, context.closingUserId, context.startedByUserId)
+    ) {
+      blockingReasons.push(
+        'Закрыть этап может главный врач или врач, который начал этот этап.',
       );
-      const isPrimaryCloser = primaryOwner?.userId === context.closingUserId;
-      const canOverride =
-        context.closingUserRole === UserRole.SYSTEM_ADMIN ||
-        context.closingUserRole === UserRole.CHIEF_DOCTOR;
-
-      if (!isPrimaryCloser && !canOverride) {
-        blockingReasons.push(
-          `Закрыть этап может только primary ${context.stageTemplateOwnerRole}.`,
-        );
-      }
-    }
-
-    if (
-      context.stageCode === 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' &&
-      !context.hasSurgeonRadiologyConfirmation
-    ) {
-      blockingReasons.push('Хирург не подтвердил рентгенологический комплект.');
-    }
-
-    if (
-      context.stageCode !== 'POSTOP_SURGICAL_RADIOLOGY_CONTROL' &&
-      !context.hasDoctorConfirmation
-    ) {
-      blockingReasons.push('Отсутствует подтверждение врача по этапу.');
     }
 
     return {
@@ -222,12 +215,25 @@ export class StageCompletenessService {
       );
     }
 
+    const mixedMediaBranches =
+      input.stageCode !== 'IMPRESSIONS_OR_SCANS' && hasMixedMediaBranches(input.requirements);
+    if (mixedMediaBranches && !input.mediaBranchMode) {
+      pushUnique(result.missingClinicalFields, 'mediaBranchMode');
+      pushUnique(
+        result.blockingReasons,
+        'Не выбран вид информации для закрытия этапа.',
+      );
+    }
+
     for (const req of input.requirements) {
       if (
         !isMediaRequirementEffectivelyRequired({
           stageCode: input.stageCode,
           impressionCaptureMode: input.impressionCaptureMode,
+          mediaBranchMode: input.mediaBranchMode,
+          mixedMediaBranches,
           code: req.code,
+          mediaType: req.mediaType,
           templateRequired: req.required,
         })
       ) {
@@ -236,7 +242,8 @@ export class StageCompletenessService {
       // Structured data / confirmation handled in surgical checks
       if (
         req.mediaType === 'STRUCTURED_DATA' ||
-        req.mediaType === 'STRUCTURED_CONFIRMATION'
+        req.mediaType === 'STRUCTURED_CONFIRMATION' ||
+        isImplantSliceCardsRequirement(req)
       ) {
         continue;
       }
@@ -380,65 +387,29 @@ export class StageCompletenessService {
       pushUnique(result.blockingReasons, 'Отсутствует послеоперационное ОПТГ.');
     }
 
+    this.checkImplantSliceCards(input, result);
+  }
+
+  private checkImplantSliceCards(
+    input: StageCompletenessInput,
+    result: CompletenessResult,
+  ) {
     const implants = input.implants ?? [];
-    if (implants.length === 0) {
-      pushUnique(result.missingImplantRecords, 'REGISTRY');
+    const withSlices = implants.filter((implant) => implant.attachments.length > 0);
+    if (withSlices.length === 0) {
+      pushUnique(result.missingImplantRecords, 'SLICE');
       pushUnique(
         result.blockingReasons,
         'Не загружен ни один JPG-срез имплантата (пустые окна зубов допустимы).',
       );
     }
 
-    for (const implant of implants) {
+    for (const implant of withSlices) {
       const label = implant.implantLabel || `#${implant.implantNumber}`;
-      if (!implant.jawScope || (implant.jawScope !== 'UPPER' && implant.jawScope !== 'LOWER')) {
-        pushUnique(result.missingImplantRecords, `${label}:JAW`);
-        pushUnique(result.blockingReasons, `Имплантат ${label}: не указана челюсть.`);
-      }
-      if (!implant.toothPositionFdi) {
-        pushUnique(result.missingImplantRecords, `${label}:TOOTH`);
-        pushUnique(result.blockingReasons, `Имплантат ${label}: не указан номер зуба.`);
-      }
-      // Вид и метод установки на этом этапе опциональны — не блокируют.
-
-      const hasJpgSlice = implant.attachments.some((a) => a.surgeonConfirmed);
-      if (!hasJpgSlice) {
-        pushUnique(result.missingImplantRecords, `${label}:SLICE`);
-        pushUnique(
-          result.blockingReasons,
-          `Имплантат ${label}: не загружен JPG-срез с экрана КТ.`,
-        );
-      }
-
       if (implant.status === 'NEEDS_REVIEW') {
         pushUnique(
           result.blockingReasons,
           `Имплантат ${label} требует разбора руководителя/главного врача.`,
-        );
-      }
-    }
-
-    const conf = input.surgeonConfirmation;
-    if (!conf) {
-      pushUnique(
-        result.blockingReasons,
-        'Хирург не подтвердил рентгенологический комплект.',
-      );
-    } else {
-      if (
-        !conf.allImplantsDocumented ||
-        !conf.optgUploaded ||
-        !conf.allImplantsHaveCtSlices
-      ) {
-        pushUnique(
-          result.blockingReasons,
-          'Хирург не подтвердил рентгенологический комплект.',
-        );
-      }
-      if (conf.hasImplantsForReview) {
-        pushUnique(
-          result.blockingReasons,
-          'Имеются имплантаты, требующие разбора руководителя/главного врача.',
         );
       }
     }

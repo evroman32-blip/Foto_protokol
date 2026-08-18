@@ -1,8 +1,12 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
+  Delete,
+  ForbiddenException,
   Get,
+  Module,
   Param,
   Patch,
   Post,
@@ -11,11 +15,12 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { PatientSex } from '@mandarin/contracts';
+import { PatientSex, UserRole, PATIENT_EDITOR_ROLES, isModeratorRole, isExpertRole, maskPatientFio } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
 import { BranchAccessGuard } from '../../common/guards/branch-access.guard';
-import { AuditAction } from '../../common/decorators/metadata.decorators';
-import { Module } from '@nestjs/common';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { AuditAction, Roles } from '../../common/decorators/metadata.decorators';
+import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 
 class CreatePatientDto {
   /** Номер карты / локальный номер пациента */
@@ -97,11 +102,12 @@ class UpdatePatientDto {
   comment?: string;
 }
 
-function mapPatient<T extends { localPatientNumber?: string }>(patient: T) {
-  return {
+function mapPatient<T extends { localPatientNumber?: string }>(patient: T, role?: string) {
+  const mapped = {
     ...patient,
     cardNumber: patient.localPatientNumber ?? null,
   };
+  return isExpertRole(role) ? maskPatientFio(mapped) : mapped;
 }
 
 @ApiTags('patients')
@@ -112,40 +118,48 @@ export class PatientsController {
 
   @Get()
   async findAll(
+    @CurrentUser() user: AuthUser,
     @Query('branchId') branchId?: string,
     @Query('search') search?: string,
     @Query('q') q?: string,
   ) {
     const term = search ?? q;
+    const expert = isExpertRole(user.role);
     const rows = await this.prisma.patient.findMany({
       where: {
         branchId: branchId ?? undefined,
         archivedAt: null,
         OR: term
-          ? [
-              { lastName: { contains: term, mode: 'insensitive' } },
-              { firstName: { contains: term, mode: 'insensitive' } },
-              { localPatientNumber: { contains: term, mode: 'insensitive' } },
-              { phone: { contains: term, mode: 'insensitive' } },
-            ]
+          ? expert
+            ? [{ localPatientNumber: { contains: term, mode: 'insensitive' } }]
+            : [
+                { lastName: { contains: term, mode: 'insensitive' } },
+                { firstName: { contains: term, mode: 'insensitive' } },
+                { localPatientNumber: { contains: term, mode: 'insensitive' } },
+                { phone: { contains: term, mode: 'insensitive' } },
+              ]
           : undefined,
       },
-      orderBy: { lastName: 'asc' },
+      orderBy: expert
+        ? [{ localPatientNumber: 'asc' }]
+        : [{ lastName: 'asc' }, { firstName: 'asc' }, { middleName: 'asc' }],
       take: 100,
     });
-    return rows.map(mapPatient);
+    return rows.map((row) => mapPatient(row, user.role));
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     const row = await this.prisma.patient.findUniqueOrThrow({
       where: { id },
       include: { branch: true, cases: true },
     });
-    return mapPatient(row);
+    return mapPatient(row, user.role);
   }
 
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles(...PATIENT_EDITOR_ROLES)
   @AuditAction('patient.create')
   async create(@Body() dto: CreatePatientDto) {
     const localPatientNumber = (dto.localPatientNumber ?? dto.cardNumber ?? '').trim();
@@ -171,6 +185,8 @@ export class PatientsController {
   }
 
   @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles(...PATIENT_EDITOR_ROLES)
   @AuditAction('patient.update')
   async update(@Param('id') id: string, @Body() dto: UpdatePatientDto) {
     const localPatientNumber = dto.localPatientNumber ?? dto.cardNumber;
@@ -188,6 +204,27 @@ export class PatientsController {
       },
     });
     return mapPatient(updated);
+  }
+
+  @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.MODERATOR)
+  @AuditAction('patient.delete')
+  async remove(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    if (!isModeratorRole(actor.role)) {
+      throw new ForbiddenException('Удалять данные может только модератор');
+    }
+    const patient = await this.prisma.patient.findUniqueOrThrow({
+      where: { id },
+      include: { _count: { select: { cases: true } } },
+    });
+    if (patient._count.cases > 0) {
+      throw new ConflictException(
+        'Нельзя удалить карточку пациента: пациент участвует в клиническом случае. Сначала удалите случай.',
+      );
+    }
+    await this.prisma.patient.delete({ where: { id } });
+    return { success: true };
   }
 }
 

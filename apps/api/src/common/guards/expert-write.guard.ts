@@ -33,12 +33,12 @@ export class ExpertWriteGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     if (SAFE_METHODS.has(String(request.method ?? '').toUpperCase())) return true;
 
-    const user = request.user as { role?: string } | undefined;
+    const user = request.user as { role?: string; accountStatus?: string } | undefined;
     if (!user) return true;
 
-    if (user.role === UserRole.EXPERT) {
+    if (user.role === UserRole.EXPERT || user.accountStatus === 'PENDING') {
       throw new ForbiddenException(
-        'Режим просмотра: изменять данные могут только подтверждённые сотрудники. Дождитесь подтверждения прав администратором.',
+        'Режим просмотра: изменять данные могут только подтверждённые сотрудники. Дождитесь подтверждения прав модератором.',
       );
     }
 

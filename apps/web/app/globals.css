@@ -47,6 +47,10 @@
     @apply inline-flex items-center justify-center rounded border border-border-strong bg-white px-4 py-2 text-sm font-medium text-graphite transition hover:bg-surface-muted disabled:opacity-50;
   }
 
+  .btn-danger {
+    @apply inline-flex items-center justify-center rounded border border-status-error bg-white px-4 py-2 text-sm font-medium text-status-error transition hover:bg-red-50 disabled:opacity-50;
+  }
+
   .card {
     @apply rounded border border-border bg-white p-5 shadow-sm;
   }

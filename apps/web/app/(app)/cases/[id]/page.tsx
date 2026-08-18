@@ -1,23 +1,25 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState, LoadingState } from '@/components/States';
 import { casesApi, type ClinicalCaseDto } from '@/lib/api';
+import { confirmDelete } from '@/lib/confirm-delete';
 import { CASE_STATUS_LABELS, JAW_SCOPE_LABELS, STAGE_STATUS_LABELS } from '@/lib/constants';
-
-function patientName(c: ClinicalCaseDto) {
-  return [c.patient.lastName, c.patient.firstName, c.patient.middleName].filter(Boolean).join(' ');
-}
+import { formatPatientLabel } from '@/lib/patient-label';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 export default function CaseDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const { isSiteAdmin, isExpert } = useCurrentUser();
   const [clinicalCase, setCase] = useState<ClinicalCaseDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -35,6 +37,25 @@ export default function CaseDetailPage() {
     void load();
   }, [id]);
 
+  async function handleDelete() {
+    if (
+      !(await confirmDelete(
+        'Удалить клинический случай? После удаления карточки пациента и сотрудников можно будет удалить, если они больше не участвуют в других случаях.',
+      ))
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    try {
+      await casesApi.remove(id);
+      router.push('/dashboard');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось удалить случай');
+      setDeleting(false);
+    }
+  }
+
   if (loading) return <LoadingState />;
   if (error && !clinicalCase) return <ErrorState message={error} onRetry={load} />;
   if (!clinicalCase) return null;
@@ -46,12 +67,19 @@ export default function CaseDetailPage() {
   return (
     <div>
       <PageHeader
-        title={patientName(clinicalCase)}
+        title={formatPatientLabel(clinicalCase.patient, { hideFio: isExpert })}
         description={clinicalCase.clinicalScenario}
         actions={
-          <Link href="/dashboard" className="btn-secondary">
-            К панели
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/dashboard" className="btn-secondary">
+              К панели
+            </Link>
+            {isSiteAdmin ? (
+              <button type="button" className="btn-danger" disabled={deleting} onClick={() => void handleDelete()}>
+                {deleting ? 'Удаление…' : 'Удалить случай'}
+              </button>
+            ) : null}
+          </div>
         }
       />
 

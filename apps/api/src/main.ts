@@ -15,6 +15,32 @@ import { AppModule } from './app.module';
   return this.toString();
 };
 
+function addOrigin(into: Set<string>, raw: string) {
+  const value = raw.trim().replace(/\/+$/, '');
+  if (!value) return;
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    into.add(value);
+    return;
+  }
+  into.add(`http://${value}`);
+  into.add(`https://${value}`);
+}
+
+function collectCorsOrigins(): string[] {
+  const origins = new Set<string>();
+  for (const raw of [
+    process.env.CORS_ORIGIN,
+    process.env.WEB_URL,
+    process.env.PUBLIC_HOST,
+    'msi-fotoprotocol.ru',
+    'www.msi-fotoprotocol.ru',
+    '176.98.177.79',
+  ]) {
+    for (const part of (raw ?? '').split(',')) addOrigin(origins, part);
+  }
+  return [...origins];
+}
+
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
@@ -30,18 +56,9 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
   const isDev = (process.env.NODE_ENV ?? 'development') !== 'production';
-  const configuredOrigins = (process.env.CORS_ORIGIN ?? process.env.WEB_URL ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const corsOrigins = collectCorsOrigins();
   app.enableCors({
-    // In development reflect any Origin (localhost vs 127.0.0.1 are different browser origins).
-    // In production use explicit WEB_URL / CORS_ORIGIN list.
-    origin: isDev
-      ? true
-      : configuredOrigins.length > 0
-        ? configuredOrigins
-        : 'http://localhost:3000',
+    origin: isDev ? true : corsOrigins.length ? corsOrigins : true,
     credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],

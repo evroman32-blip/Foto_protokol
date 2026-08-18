@@ -28,6 +28,11 @@ class UpdateImpressionModeDto {
   impressionCaptureMode!: ImpressionCaptureMode;
 }
 
+class UpdateMediaBranchModeDto {
+  @IsString({ message: 'Укажите вид информации' })
+  mediaBranchMode!: string;
+}
+
 const TOOTH_SHADES = ['BL1', 'BL2', 'BL3', 'BL4', 'B1', 'A1', 'A2', 'A3', 'A4'] as const;
 
 class UpdateDesiredToothShadeDto {
@@ -65,6 +70,17 @@ export class StagesController {
       user,
       dto.impressionCaptureMode,
     );
+  }
+
+  @Patch(':stageId/media-branch-mode')
+  @AuditAction('stage.media_branch_mode')
+  @ApiOperation({ summary: 'Выбор вида информации для закрытия смешанного этапа' })
+  setMediaBranchMode(
+    @Param('stageId') stageId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateMediaBranchModeDto,
+  ) {
+    return this.stagesService.setMediaBranchMode(stageId, user, dto.mediaBranchMode);
   }
 
   @Patch(':stageId/desired-tooth-shade')

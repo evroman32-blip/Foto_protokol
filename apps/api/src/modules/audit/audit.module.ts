@@ -25,7 +25,7 @@ function actorName(actor: {
 @ApiTags('audit')
 @Controller('audit')
 @UseGuards(RolesGuard)
-@Roles(UserRole.AUDITOR, UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR)
+@Roles(UserRole.AUDITOR, UserRole.MODERATOR, UserRole.CHIEF_DOCTOR)
 export class AuditController {
   constructor(private readonly prisma: PrismaService) {}
 

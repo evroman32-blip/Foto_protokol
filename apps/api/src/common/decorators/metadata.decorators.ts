@@ -7,6 +7,10 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 export const ROLES_KEY = 'roles';
 export const Roles = (...roles: UserRole[]) => SetMetadata(ROLES_KEY, roles);
 
+/** Снять классовый @Roles: достаточно быть авторизованным. */
+export const SKIP_ROLES_KEY = 'skipRoles';
+export const SkipRoles = () => SetMetadata(SKIP_ROLES_KEY, true);
+
 export const SKIP_AUDIT_KEY = 'skipAudit';
 export const SkipAudit = () => SetMetadata(SKIP_AUDIT_KEY, true);
 

@@ -21,13 +21,14 @@ import {
   IsUUID,
   Min,
 } from 'class-validator';
-import { MediaType, StageOwnerRole, UserRole } from '@mandarin/contracts';
+import { MediaType, StageOwnerRole, UserRole, isModeratorRole, isImplantSliceCardsRequirement, IMPLANT_SLICE_CARDS_SPECIAL_RULE } from '@mandarin/contracts';
 import { getEnv, isStoma1cIntegrated } from '@mandarin/config';
 import { ProtocolVersionStatus } from '@prisma/client';
 import { PrismaService } from '../../common/services/prisma.service';
-import { Roles, AuditAction } from '../../common/decorators/metadata.decorators';
+import { Roles, AuditAction, SkipRoles } from '../../common/decorators/metadata.decorators';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { assertCanDelete } from '../../common/assert-can-delete';
 import { Module } from '@nestjs/common';
 import { StagesModule } from '../stages/stages.module';
 import { StageTemplateSyncService } from '../stages/stage-template-sync.service';
@@ -259,7 +260,7 @@ class UpdateProtocolVersionDto {
 @ApiTags('admin')
 @Controller('admin')
 @UseGuards(RolesGuard)
-@Roles(UserRole.SYSTEM_ADMIN, UserRole.ORTHOPEDIC_MANAGER, UserRole.CHIEF_DOCTOR)
+@Roles(UserRole.MODERATOR, UserRole.ORTHOPEDIC_MANAGER, UserRole.CHIEF_DOCTOR)
 export class AdminController {
   constructor(
     private readonly prisma: PrismaService,
@@ -267,7 +268,7 @@ export class AdminController {
   ) {}
 
   @Get('account-requests')
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR)
+  @Roles(UserRole.MODERATOR, UserRole.CHIEF_DOCTOR)
   async listAccountRequests(@Query('status') status?: string) {
     const accountStatus =
       status === 'APPROVED' || status === 'REJECTED' || status === 'PENDING' ? status : 'PENDING';
@@ -292,27 +293,26 @@ export class AdminController {
       lastName: user.staffMember?.lastName ?? '',
       firstName: user.staffMember?.firstName ?? '',
       middleName: user.staffMember?.middleName ?? null,
+      position: user.staffMember?.position ?? null,
+      specialization: user.staffMember?.specialization ?? null,
     }));
   }
 
   @Post('users/:id/approve')
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR)
+  @Roles(UserRole.MODERATOR, UserRole.CHIEF_DOCTOR)
   @AuditAction('auth.account.approve')
   async approveAccount(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id } });
     const nextRole = user.requestedRole ?? user.role;
     if (
-      (nextRole === UserRole.SYSTEM_ADMIN ||
+      (nextRole === UserRole.MODERATOR ||
         nextRole === UserRole.CHIEF_DOCTOR ||
         nextRole === UserRole.AUDITOR) &&
-      actor.role !== UserRole.SYSTEM_ADMIN
+      !isModeratorRole(actor.role)
     ) {
       throw new ForbiddenException(
-        'Назначить главного врача, администратора или аудитора может только администратор.',
+        'Назначить главного врача, модератора или аудитора может только модератор.',
       );
-    }
-    if (nextRole === UserRole.SYSTEM_ADMIN) {
-      throw new ForbiddenException('Роль администратора нельзя выдать через заявку.');
     }
     return this.prisma.user.update({
       where: { id },
@@ -325,7 +325,7 @@ export class AdminController {
   }
 
   @Post('users/:id/reject')
-  @Roles(UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR)
+  @Roles(UserRole.MODERATOR, UserRole.CHIEF_DOCTOR)
   @AuditAction('auth.account.reject')
   async rejectAccount(@Param('id') id: string) {
     return this.prisma.user.update({
@@ -339,6 +339,7 @@ export class AdminController {
   }
 
   @Get('protocol-versions')
+  @SkipRoles()
   async listProtocolVersions() {
     const rows = await this.prisma.protocolVersion.findMany({
       include: { protocol: true },
@@ -590,8 +591,10 @@ export class AdminController {
   }
 
   @Delete('stage-templates/:id')
+  @Roles(UserRole.MODERATOR)
   @AuditAction('admin.stage-template.delete')
-  async deleteStageTemplate(@Param('id') id: string) {
+  async deleteStageTemplate(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    assertCanDelete(actor);
     const template = await this.prisma.stageTemplate.findUniqueOrThrow({
       where: { id },
       include: {
@@ -708,6 +711,9 @@ export class AdminController {
         sortOrder: dto.sortOrder ?? 0,
         instruction: dto.instruction?.trim() || null,
         isActive: dto.isActive ?? true,
+        specialRule: isImplantSliceCardsRequirement({ code, name: dto.name })
+          ? IMPLANT_SLICE_CARDS_SPECIAL_RULE
+          : undefined,
       },
     });
 
@@ -720,6 +726,13 @@ export class AdminController {
   @Patch('media-requirements/:id')
   @AuditAction('admin.media-requirement.update')
   async updateMediaRequirement(@Param('id') id: string, @Body() dto: UpdateMediaRequirementDto) {
+    const current = await this.prisma.mediaRequirement.findUniqueOrThrow({ where: { id } });
+    const nextName = dto.name?.trim() ?? current.name;
+    const sliceCards = isImplantSliceCardsRequirement({
+      code: current.code,
+      name: nextName,
+      specialRule: current.specialRule,
+    });
     const updated = await this.prisma.mediaRequirement.update({
       where: { id },
       data: {
@@ -732,6 +745,7 @@ export class AdminController {
         sortOrder: dto.sortOrder,
         isActive: dto.isActive,
         instruction: dto.instruction === undefined ? undefined : dto.instruction?.trim() || null,
+        ...(sliceCards ? { specialRule: IMPLANT_SLICE_CARDS_SPECIAL_RULE } : {}),
       },
     });
 
@@ -746,8 +760,10 @@ export class AdminController {
   }
 
   @Delete('media-requirements/:id')
+  @Roles(UserRole.MODERATOR)
   @AuditAction('admin.media-requirement.delete')
-  async deleteMediaRequirement(@Param('id') id: string) {
+  async deleteMediaRequirement(@Param('id') id: string, @CurrentUser() actor: AuthUser) {
+    assertCanDelete(actor);
     const riIds = (
       await this.prisma.requirementInstance.findMany({
         where: { mediaRequirementId: id },

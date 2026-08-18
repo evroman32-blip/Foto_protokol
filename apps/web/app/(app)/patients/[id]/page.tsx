@@ -7,18 +7,19 @@ import { FormEvent, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState, LoadingState } from '@/components/States';
 import { patientsApi, type PatientDto } from '@/lib/api';
-
-function formatPatient(p: PatientDto) {
-  return [p.lastName, p.firstName, p.middleName].filter(Boolean).join(' ');
-}
+import { confirmDelete } from '@/lib/confirm-delete';
+import { formatPatientLabel, patientCardNumber } from '@/lib/patient-label';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { isSiteAdmin, canEditPatients, isExpert } = useCurrentUser();
   const [patient, setPatient] = useState<PatientDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -38,11 +39,12 @@ export default function PatientDetailPage() {
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!patient) return;
+    if (!patient || !canEditPatients) return;
     setSaving(true);
+    setError(null);
     const fd = new FormData(e.currentTarget);
     try {
-      const updated = await patientsApi.update(id, {
+      await patientsApi.update(id, {
         lastName: String(fd.get('lastName')),
         firstName: String(fd.get('firstName')),
         middleName: String(fd.get('middleName') || '') || undefined,
@@ -51,21 +53,29 @@ export default function PatientDetailPage() {
         phone: String(fd.get('phone') || '') || undefined,
         cardNumber: String(fd.get('cardNumber') || '') || undefined,
       });
-      setPatient(updated);
+      router.push('/patients');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка сохранения');
-    } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm('Удалить пациента?')) return;
+    if (
+      !(await confirmDelete(
+        'Удалить карточку пациента? Если пациент участвует в клиническом случае, удаление будет запрещено.',
+      ))
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
     try {
       await patientsApi.remove(id);
       router.push('/patients');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка удаления');
+      setError(err instanceof Error ? err.message : 'Не удалось удалить карточку');
+      setDeleting(false);
     }
   }
 
@@ -76,22 +86,38 @@ export default function PatientDetailPage() {
   return (
     <div>
       <PageHeader
-        title={formatPatient(patient)}
+        title={formatPatientLabel(patient, { hideFio: isExpert })}
         actions={
-          <>
+          <div className="flex gap-2">
             <Link href="/patients" className="btn-secondary">
               К списку
             </Link>
-            <button type="button" onClick={handleDelete} className="btn-danger">
-              Удалить
-            </button>
-          </>
+            {isSiteAdmin ? (
+              <button type="button" className="btn-danger" disabled={deleting} onClick={() => void handleDelete()}>
+                {deleting ? 'Удаление…' : 'Удалить'}
+              </button>
+            ) : null}
+          </div>
         }
       />
 
       {error ? <div className="alert-error mb-4">{error}</div> : null}
+      {isExpert ? (
+        <div className="card max-w-2xl">
+          <div className="text-xs text-gray-500">Номер карты</div>
+          <div className="text-lg font-medium">{patientCardNumber(patient) || '—'}</div>
+        </div>
+      ) : (
+        <>
+      {!canEditPatients ? (
+        <p className="mb-4 text-sm text-gray-600">
+          Изменять карточку пациента могут все врачи, а также исполнительный директор,
+          управляющий клиникой, администратор клиники, главный врач и модератор.
+        </p>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="card max-w-2xl space-y-4">
+        <fieldset disabled={!canEditPatients} className="space-y-4 border-0 p-0">
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <label className="label-field" htmlFor="lastName">
@@ -173,10 +199,15 @@ export default function PatientDetailPage() {
           />
         </div>
 
-        <button type="submit" disabled={saving} className="btn-primary">
-          {saving ? 'Сохранение…' : 'Сохранить изменения'}
-        </button>
+        {canEditPatients ? (
+          <button type="submit" disabled={saving} className="btn-primary">
+            {saving ? 'Сохранение…' : 'Сохранить изменения'}
+          </button>
+        ) : null}
+        </fieldset>
       </form>
+        </>
+      )}
     </div>
   );
 }

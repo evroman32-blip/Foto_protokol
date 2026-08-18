@@ -7,11 +7,16 @@ import {
 import { createHash } from 'crypto';
 import {
   ImpressionCaptureMode,
+  MEDIA_BRANCH_ALL,
+  listMediaBranchTypes,
+  isImplantSliceCardsRequirement,
   ORTHODONTIC_CONFIRMATION_TEXT,
+  SURGEON_RADIOLOGY_CONFIRMATION_TEXT,
   StageCode,
   StageInstanceStatus,
   StageOwnerRole,
   UserRole,
+  isModeratorRole,
 } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
@@ -77,7 +82,12 @@ export class StagesService {
       const code = primary?.requirementCode ?? mr?.code ?? null;
       const tooth =
         asset.implantAttachments[0]?.surgicalImplantRecord?.toothPositionFdi ?? null;
-      const isSliceCard = code === 'POSTOP_IMPLANT_SLICE_CARDS' || Boolean(tooth);
+      const isSliceCard =
+        isImplantSliceCardsRequirement({
+          code,
+          name: mr?.name,
+          specialRule: mr?.specialRule,
+        }) || Boolean(tooth);
       const toothLabel = tooth
         ? `Зуб ${tooth}`
         : asset.implantAttachments[0]?.surgicalImplantRecord?.implantLabel ?? null;
@@ -141,10 +151,65 @@ export class StagesService {
       stage.stageTemplate.ownerRole as StageOwnerRole,
       'confirm',
     );
+    await this.ensureStarted(stageId, user.id);
 
     return this.prisma.stageInstance.update({
       where: { id: stageId },
       data: { impressionCaptureMode: mode },
+      include: { stageTemplate: true },
+    });
+  }
+
+  async setMediaBranchMode(stageId: string, user: AuthUser, rawMode: string) {
+    const mode = String(rawMode ?? '').trim().toUpperCase();
+
+    const stage = await this.prisma.stageInstance.findUnique({
+      where: { id: stageId },
+      include: {
+        stageTemplate: true,
+        requirementInstances: {
+          where: { mediaRequirement: { isActive: true } },
+          include: { mediaRequirement: true },
+        },
+      },
+    });
+    if (!stage) throw new NotFoundException('Этап не найден');
+    if (stage.stageTemplate.code === StageCode.IMPRESSIONS_OR_SCANS) {
+      throw new BadRequestException(
+        'На этапе оттисков и сканов используйте выбор «скан или оттиск».',
+      );
+    }
+    const types = listMediaBranchTypes(
+      stage.requirementInstances.map((r) => ({
+        required: r.mediaRequirement.required,
+        mediaType: r.mediaRequirement.mediaType,
+        code: r.mediaRequirement.code,
+        name: r.mediaRequirement.name,
+        specialRule: r.mediaRequirement.specialRule,
+      })),
+    );
+    if (types.length < 2) {
+      throw new BadRequestException('На этом этапе один вид информации — выбор не нужен.');
+    }
+    const allowed = new Set([MEDIA_BRANCH_ALL, ...types]);
+    if (!allowed.has(mode)) {
+      throw new BadRequestException(
+        `Допустимые значения: ${[...allowed].join(', ')}`,
+      );
+    }
+    if (stage.status === StageInstanceStatus.CLOSED) {
+      throw new BadRequestException('Нельзя менять вид информации на закрытом этапе');
+    }
+    this.assertRoleCanActOnStage(
+      user.role,
+      stage.stageTemplate.ownerRole as StageOwnerRole,
+      'confirm',
+    );
+    await this.ensureStarted(stageId, user.id);
+
+    return this.prisma.stageInstance.update({
+      where: { id: stageId },
+      data: { mediaBranchMode: mode },
       include: { stageTemplate: true },
     });
   }
@@ -168,6 +233,7 @@ export class StagesService {
       stage.stageTemplate.ownerRole as StageOwnerRole,
       'confirm',
     );
+    await this.ensureStarted(stageId, user.id);
 
     return this.prisma.stageInstance.update({
       where: { id: stageId },
@@ -186,6 +252,7 @@ export class StagesService {
     }
 
     this.assertRoleCanActOnStage(user.role, stage.stageTemplate.ownerRole as StageOwnerRole, 'confirm');
+    await this.ensureStarted(stageId, user.id);
 
     const text = confirmationText ?? ORTHODONTIC_CONFIRMATION_TEXT;
     const snapshotHash = createHash('sha256').update(text + stageId).digest('hex');
@@ -215,8 +282,6 @@ export class StagesService {
       throw new BadRequestException('Этап уже закрыт');
     }
 
-    this.assertRoleCanActOnStage(user.role, stage.stageTemplate.ownerRole as StageOwnerRole, 'close');
-
     const { completeness, permission } = await this.completenessService.canUserClose(stageId, user.id);
 
     if (!permission.canClose) {
@@ -230,6 +295,46 @@ export class StagesService {
     const snapshotHash = createHash('sha256')
       .update(JSON.stringify(completeness))
       .digest('hex');
+
+    if (stage.stageTemplate.code === StageCode.POSTOP_SURGICAL_RADIOLOGY_CONTROL) {
+      await this.prisma.surgeonRadiologyConfirmation.upsert({
+        where: { stageInstanceId: stageId },
+        create: {
+          stageInstanceId: stageId,
+          surgeonUserId: user.id,
+          confirmationText: SURGEON_RADIOLOGY_CONFIRMATION_TEXT,
+          snapshotHash,
+          allImplantsDocumented: true,
+          optgUploaded: true,
+          cbctUploaded: true,
+          allImplantsHaveCtSlices: true,
+          allImplantsHaveMethodSelected: true,
+          hasImplantsForReview: false,
+          comment: comment ?? null,
+        },
+        update: {
+          surgeonUserId: user.id,
+          confirmationText: SURGEON_RADIOLOGY_CONFIRMATION_TEXT,
+          snapshotHash,
+          allImplantsDocumented: true,
+          optgUploaded: true,
+          cbctUploaded: true,
+          allImplantsHaveCtSlices: true,
+          confirmedAt: new Date(),
+          comment: comment ?? null,
+        },
+      });
+    } else {
+      await this.prisma.doctorConfirmation.create({
+        data: {
+          stageInstanceId: stageId,
+          doctorUserId: user.id,
+          protocolVersionId: stage.protocolVersionId,
+          confirmationText: ORTHODONTIC_CONFIRMATION_TEXT,
+          snapshotHash,
+        },
+      });
+    }
 
     const closure = await this.prisma.stageClosure.create({
       data: {
@@ -255,12 +360,8 @@ export class StagesService {
       throw new BadRequestException('Этап не закрыт');
     }
 
-    if (
-      user.role !== UserRole.SYSTEM_ADMIN &&
-      user.role !== UserRole.CHIEF_DOCTOR &&
-      user.role !== UserRole.ORTHOPEDIC_MANAGER
-    ) {
-      throw new ForbiddenException('Недостаточно прав для переоткрытия этапа');
+    if (!isModeratorRole(user.role)) {
+      throw new ForbiddenException('Переоткрыть закрытый этап может только модератор');
     }
 
     await this.prisma.stageInstance.update({
@@ -273,12 +374,24 @@ export class StagesService {
     return { stageInstanceId: stageId, reason, reopenedBy: user.id };
   }
 
+  private async ensureStarted(stageId: string, userId: string): Promise<void> {
+    const stage = await this.prisma.stageInstance.findUnique({
+      where: { id: stageId },
+      select: { startedByUserId: true, openedAt: true, status: true },
+    });
+    if (!stage || stage.status === StageInstanceStatus.CLOSED || stage.startedByUserId) return;
+    await this.prisma.stageInstance.update({
+      where: { id: stageId },
+      data: { startedByUserId: userId, openedAt: stage.openedAt ?? new Date() },
+    });
+  }
+
   private assertRoleCanActOnStage(
     userRole: string,
     ownerRole: StageOwnerRole,
     action: 'close' | 'confirm',
   ) {
-    if (userRole === UserRole.SYSTEM_ADMIN || userRole === UserRole.CHIEF_DOCTOR) {
+    if (isModeratorRole(userRole) || userRole === 'CHIEF_DOCTOR') {
       return;
     }
 

@@ -4,7 +4,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { UserRole } from '@mandarin/contracts';
+import { UserRole, canEditStaffAndPatients, isModeratorRole } from '@mandarin/contracts';
 import { PrismaService } from '../services/prisma.service';
 
 @Injectable()
@@ -20,9 +20,9 @@ export class BranchAccessGuard implements CanActivate {
     }
 
     if (
-      user.role === UserRole.SYSTEM_ADMIN ||
+      isModeratorRole(user.role) ||
       user.role === UserRole.AUDITOR ||
-      user.role === UserRole.CHIEF_DOCTOR
+      canEditStaffAndPatients(user.role)
     ) {
       return true;
     }

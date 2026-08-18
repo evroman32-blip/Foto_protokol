@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState, LoadingState } from '@/components/States';
 import { adminApi, type AccountRequestDto } from '@/lib/api';
+import { notifyAccountRequestsChanged } from '@/lib/pending-account-requests';
 import { useCurrentUser } from '@/lib/use-current-user';
 
 export default function AccountRequestsPage() {
@@ -18,7 +19,9 @@ export default function AccountRequestsPage() {
     setLoading(true);
     setError(null);
     try {
-      setRows(await adminApi.accountRequests('PENDING'));
+      const next = await adminApi.accountRequests('PENDING');
+      setRows(next);
+      notifyAccountRequestsChanged();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось загрузить заявки');
     } finally {
@@ -59,13 +62,14 @@ export default function AccountRequestsPage() {
 
   if (userLoading || loading) return <LoadingState />;
   if (!canApproveAccounts) {
-    return <ErrorState message="Подтверждать права могут только администратор и главный врач." />;
+    return <ErrorState message="Подтверждать права могут только модератор и главный врач." />;
   }
 
   return (
     <div>
       <PageHeader
         title="Заявки на доступ"
+        count={rows.length}
         description="Пока заявка не подтверждена, пользователь видит сервис только в режиме просмотра."
       />
       {error ? <div className="alert-error mb-4">{error}</div> : null}
@@ -75,7 +79,7 @@ export default function AccountRequestsPage() {
             <tr>
               <th>ФИО</th>
               <th>Почта / телефон</th>
-              <th>Запрошенный статус</th>
+              <th>Должность / права</th>
               <th />
             </tr>
           </thead>
@@ -96,7 +100,12 @@ export default function AccountRequestsPage() {
                     <div>{row.email}</div>
                     <div className="text-xs text-gray-500">{row.phone ?? '—'}</div>
                   </td>
-                  <td>{row.requestedRoleLabel ?? row.requestedRole ?? '—'}</td>
+                  <td>
+                    <div>{[row.position, row.specialization].filter(Boolean).join(' · ') || '—'}</div>
+                    <div className="text-xs text-gray-500">
+                      {row.requestedRoleLabel ?? row.requestedRole ?? '—'}
+                    </div>
+                  </td>
                   <td className="space-x-2">
                     <button
                       type="button"

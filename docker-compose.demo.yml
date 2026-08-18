@@ -89,7 +89,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       SESSION_SECRET: ${SESSION_SECRET}
       RUN_SEED_ON_START: ${RUN_SEED_ON_START:-true}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-DemoReview2026!}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       AI_PROVIDER: mock
     depends_on:
       postgres:
@@ -102,8 +103,8 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/v1/health"]
       interval: 10s
       timeout: 5s
-      retries: 15
-      start_period: 40s
+      retries: 18
+      start_period: 120s
     networks: [internal]
 
   worker:
@@ -137,14 +138,16 @@ services:
       dockerfile: infra/docker/Dockerfile.web
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        API_URL: http://api:3001
     restart: unless-stopped
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       API_URL: http://api:3001
+      WEB_URL: ${WEB_URL}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
     depends_on:
-      api:
-        condition: service_healthy
+      - api
     networks: [internal]
 
   nginx:
@@ -154,8 +157,10 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./infra/nginx/demo.conf:/etc/nginx/conf.d/default.conf:ro
+      # HTTPS включается сменой NGINX_CONF в .env.demo (см. infra/scripts/enable-https.sh)
+      - ${NGINX_CONF:-./infra/nginx/demo.conf}:/etc/nginx/conf.d/default.conf:ro
       - ./infra/nginx/certs:/etc/nginx/certs:ro
+      - ./infra/nginx/certbot-webroot:/var/www/certbot
     depends_on:
       - web
       - api

@@ -18,7 +18,11 @@ export class QueueService implements OnModuleDestroy {
 
   constructor() {
     const env = getEnv();
-    this.connection = new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null });
+    this.connection = new IORedis(env.REDIS_URL, {
+      maxRetriesPerRequest: null,
+      connectTimeout: 4000,
+      commandTimeout: 4000,
+    });
   }
 
   getQueue(name: string): Queue {
@@ -33,12 +37,16 @@ export class QueueService implements OnModuleDestroy {
 
   async addJob(queueName: string, jobName: string, data: Record<string, unknown>) {
     const queue = this.getQueue(queueName);
-    return queue.add(jobName, data, {
+    const job = queue.add(jobName, data, {
       attempts: 3,
       backoff: { type: 'exponential', delay: 5000 },
       removeOnComplete: 100,
       removeOnFail: 500,
     });
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Очередь обработки не ответила за 5с')), 5000);
+    });
+    return Promise.race([job, timeout]);
   }
 
   async onModuleDestroy() {

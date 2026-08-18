@@ -8,6 +8,7 @@ export interface AuthUser {
   branchId: string | null;
   accountStatus: string;
   requestedRole: string | null;
+  position: string | null;
 }
 
 export const CurrentUser = createParamDecorator(

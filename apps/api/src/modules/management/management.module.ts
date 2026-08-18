@@ -10,7 +10,7 @@ import { Module } from '@nestjs/common';
 @ApiTags('management')
 @Controller('management')
 @UseGuards(RolesGuard)
-@Roles(UserRole.SYSTEM_ADMIN, UserRole.CHIEF_DOCTOR, UserRole.ORTHOPEDIC_MANAGER, UserRole.AUDITOR)
+@Roles(UserRole.MODERATOR, UserRole.CHIEF_DOCTOR, UserRole.ORTHOPEDIC_MANAGER, UserRole.AUDITOR)
 export class ManagementController {
   constructor(private readonly prisma: PrismaService) {}
 

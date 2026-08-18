@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "StaffMember" ADD COLUMN IF NOT EXISTS "clinicalRoles" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

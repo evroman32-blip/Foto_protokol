@@ -8,7 +8,11 @@ datasource db {
 }
 
 enum UserRole {
-  SYSTEM_ADMIN
+  MODERATOR
+  EXECUTIVE_DIRECTOR
+  CLINIC_MANAGER
+  CLINIC_ADMINISTRATOR
+  TREATMENT_CURATOR
   CHIEF_DOCTOR
   ORTHOPEDIC_MANAGER
   SURGEON
@@ -263,6 +267,7 @@ model StaffMember {
   middleName     String?
   position       String
   specialization String?
+  clinicalRoles  String[]  @default([])
   branchId       String?
   branch         Branch?   @relation(fields: [branchId], references: [id])
   isActive       Boolean   @default(true)
@@ -410,6 +415,7 @@ model StageInstance {
   protocolVersionId     String
   protocolVersion       ProtocolVersion     @relation(fields: [protocolVersionId], references: [id])
   status                StageInstanceStatus @default(NOT_STARTED)
+  startedByUserId       String?
   openedAt              DateTime?
   closedAt              DateTime?
   restHeightMm          Decimal?            @db.Decimal(8, 2)
@@ -419,6 +425,8 @@ model StageInstance {
   registrationConclusion RegistrationConclusion?
   clinicalComment       String?
   impressionCaptureMode ImpressionCaptureMode?
+  /** PHOTO / VIDEO / STL / ALL — выбор обязательной ветки на этапе со смешанными типами */
+  mediaBranchMode       String?
   /** Желаемый цвет зубов (VITA/bleach): BL1–BL4, B1, A1–A4 — этап JAW_RELATION */
   desiredToothShade     String?
   createdAt             DateTime            @default(now())

@@ -1,10 +1,9 @@
 import { PrismaClient, UserRole, ParticipantRole, OwnerRole, MediaType, JawScope } from '@prisma/client';
 import { hashSync } from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { StageCode, SURGEON_RADIOLOGY_CONFIRMATION_TEXT } from '@mandarin/contracts';
 
 const prisma = new PrismaClient();
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? 'ChangeMe123!';
-const passwordHash = hashSync(DEMO_PASSWORD, 10);
 
 const STAGE_DEFS: Array<{
   code: StageCode;
@@ -536,9 +535,9 @@ async function main() {
     participantRole?: ParticipantRole;
     branchId: string;
   }> = [
-    { email: 'admin@example.local', role: UserRole.SYSTEM_ADMIN, lastName: 'Админов', firstName: 'Системный', position: 'Администратор', branchId: branchCentral.id },
+    { email: 'admin@example.local', role: UserRole.MODERATOR, lastName: 'Модераторов', firstName: 'Системный', position: 'Генеральный директор', branchId: branchCentral.id },
     { email: 'chief@example.local', role: UserRole.CHIEF_DOCTOR, lastName: 'Главный', firstName: 'Врач', position: 'Главный врач', participantRole: ParticipantRole.CONSULTING_DOCTOR, branchId: branchCentral.id },
-    { email: 'manager@example.local', role: UserRole.ORTHOPEDIC_MANAGER, lastName: 'Менеджер', firstName: 'Ортопедический', position: 'Руководитель ортопедии', branchId: branchCentral.id },
+    { email: 'manager@example.local', role: UserRole.CLINIC_MANAGER, lastName: 'Управляющий', firstName: 'Клиникой', position: 'Управляющий клиникой', branchId: branchCentral.id },
     { email: 'surgeon@example.local', role: UserRole.SURGEON, lastName: 'Хирургов', firstName: 'Иван', position: 'Хирург', participantRole: ParticipantRole.SURGEON, branchId: branchCentral.id },
     { email: 'ortho@example.local', role: UserRole.ORTHOPEDIST, lastName: 'Ортопедов', firstName: 'Пётр', position: 'Ортопед', participantRole: ParticipantRole.ORTHOPEDIST, branchId: branchCentral.id },
     { email: 'tech@example.local', role: UserRole.DENTAL_TECHNICIAN, lastName: 'Техников', firstName: 'Алексей', position: 'Зубной техник', participantRole: ParticipantRole.DENTAL_TECHNICIAN, branchId: branchCentral.id },
@@ -562,24 +561,71 @@ async function main() {
     const user = await prisma.user.upsert({
       where: { email: u.email },
       update: {
-        passwordHash,
         role: u.role,
         requestedRole: u.role,
-        accountStatus: 'APPROVED',
-        isActive: true,
         staffMemberId: staff.id,
+        isActive: false,
+        passwordHash: hashSync(randomBytes(32).toString('hex'), 10),
       },
       create: {
         email: u.email,
-        passwordHash,
+        passwordHash: hashSync(randomBytes(32).toString('hex'), 10),
         role: u.role,
         requestedRole: u.role,
         accountStatus: 'APPROVED',
         staffMemberId: staff.id,
-        isActive: true,
+        isActive: false,
       },
     });
     staffByEmail[u.email] = { staffId: staff.id, userId: user.id };
+  }
+
+  const bootstrapEmail = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  const bootstrapPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (bootstrapEmail && bootstrapPassword && bootstrapPassword.length >= 8) {
+    const staff = await prisma.staffMember.upsert({
+      where: { id: 'seed-staff-bootstrap-admin' },
+      update: {
+        lastName: 'Модератор',
+        firstName: 'Клиники',
+        position: 'Генеральный директор',
+        branchId: branchCentral.id,
+        isActive: true,
+      },
+      create: {
+        id: 'seed-staff-bootstrap-admin',
+        lastName: 'Модератор',
+        firstName: 'Клиники',
+        position: 'Генеральный директор',
+        branchId: branchCentral.id,
+      },
+    });
+    const existing = await prisma.user.findUnique({ where: { email: bootstrapEmail } });
+    if (existing) {
+      await prisma.user.update({
+        where: { email: bootstrapEmail },
+        data: {
+          role: UserRole.MODERATOR,
+          requestedRole: UserRole.MODERATOR,
+          accountStatus: 'APPROVED',
+          staffMemberId: staff.id,
+          isActive: true,
+        },
+      });
+    } else {
+      await prisma.user.create({
+        data: {
+          email: bootstrapEmail,
+          passwordHash: hashSync(bootstrapPassword, 10),
+          role: UserRole.MODERATOR,
+          requestedRole: UserRole.MODERATOR,
+          accountStatus: 'APPROVED',
+          staffMemberId: staff.id,
+          isActive: true,
+        },
+      });
+    }
+    console.log(`Bootstrap moderator ready: ${bootstrapEmail}`);
   }
 
   const photoProfile = await prisma.qualityProfile.upsert({
@@ -956,11 +1002,7 @@ async function main() {
     });
   }
 
-  console.log('Seed completed.');
-  console.log(`Password for all demo users: ${DEMO_PASSWORD}`);
-  for (const u of usersSpec) {
-    console.log(`  ${u.email} (${u.role})`);
-  }
+  console.log('Seed completed. Demo @example.local accounts have no login.');
   console.log(`Branches: ${branchCentral.name}, ${branchNorth.name}`);
   console.log(`Patient: ${patient.localPatientNumber} (LOCAL, no 1C)`);
   console.log(`Protocol: ${protocol.code} v${version.version}`);

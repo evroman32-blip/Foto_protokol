@@ -40,4 +40,8 @@ tools/redis-data/
 tools/minio-data/
 tools/*.zip
 tools/*.exe
+tools/*.tgz
 tools/next-build-*.txt
+tools/backups/
+tools/logs/
+tools/pgdata/

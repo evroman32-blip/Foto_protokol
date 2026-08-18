@@ -9,7 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
 import { createHash } from 'crypto';
 import type { FastifyRequest } from 'fastify';
 import { PrismaService } from '../../common/services/prisma.service';
@@ -39,8 +39,11 @@ function fieldValue(fields: Record<string, unknown>, name: string): string | und
 }
 
 class CreateBatchBody {
+  // Маршрут /stages/:stageId/upload-batches принимает id как строку,
+  // поэтому тело запроса не должно быть строже: несуществующий этап отсеет Prisma.
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty({ message: 'Укажите этап для загрузки' })
   stageInstanceId?: string;
 
   @IsOptional()
@@ -317,7 +320,11 @@ export class UploadController {
       },
     });
 
-    await this.queue.addJob(QUEUE_NAMES.PROCESS_MEDIA, 'process', { mediaAssetId: asset.id });
+    try {
+      await this.queue.addJob(QUEUE_NAMES.PROCESS_MEDIA, 'process', { mediaAssetId: asset.id });
+    } catch (err) {
+      console.error('Очередь обработки медиа недоступна, файл всё равно сохранён', err);
+    }
     return {
       ...asset,
       fileSizeBytes:
@@ -334,7 +341,11 @@ export class UploadController {
       where: { id: batchId },
       data: { status: 'PROCESSING', completedAt: new Date() },
     });
-    await this.queue.addJob(QUEUE_NAMES.PROCESS_MEDIA, 'batch-complete', { uploadBatchId: batchId });
+    try {
+      await this.queue.addJob(QUEUE_NAMES.PROCESS_MEDIA, 'batch-complete', { uploadBatchId: batchId });
+    } catch (err) {
+      console.error('Очередь завершения пакета недоступна, файлы всё равно сохранены', err);
+    }
     return batch;
   }
 

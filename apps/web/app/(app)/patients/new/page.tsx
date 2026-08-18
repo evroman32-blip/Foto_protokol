@@ -6,14 +6,17 @@ import { FormEvent, useState } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
 import { patientsApi } from '@/lib/api';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 export default function NewPatientPage() {
   const router = useRouter();
+  const { canEditPatients, loading: userLoading } = useCurrentUser();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!canEditPatients) return;
     setError(null);
     setLoading(true);
     const fd = new FormData(e.currentTarget);
@@ -33,6 +36,18 @@ export default function NewPatientPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (!userLoading && !canEditPatients) {
+    return (
+      <div>
+        <PageHeader title="Новый пациент" />
+        <div className="alert-error">
+          Создавать карточку пациента могут все врачи, а также модератор, исполнительный
+          директор, управляющий клиникой, администратор клиники и главный врач.
+        </div>
+      </div>
+    );
   }
 
   return (

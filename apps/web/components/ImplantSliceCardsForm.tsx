@@ -10,6 +10,7 @@ import {
 } from 'react';
 
 import { radiologyApi, uploadApi, type SurgicalImplantDto } from '@/lib/api';
+import { confirmDelete } from '@/lib/confirm-delete';
 import {
   attachDocumentFileDropGuard,
   preventBrowserFileNavigation,
@@ -108,10 +109,13 @@ export const ImplantSliceCardsForm = forwardRef<
     externalSaveControl?: boolean;
     /** Этап закрыт: только просмотр. */
     readOnly?: boolean;
+    /** Удаление сохранённых срезов — только модератор. */
+    canDelete?: boolean;
     onPendingChange?: (count: number) => void;
+    heading?: string;
   }
 >(function ImplantSliceCardsForm(
-  { stageId, onChanged, externalSaveControl = false, readOnly = false, onPendingChange },
+  { stageId, onChanged, externalSaveControl = false, readOnly = false, canDelete = false, onPendingChange, heading },
   ref,
 ) {
   const [implants, setImplants] = useState<SurgicalImplantDto[]>([]);
@@ -274,8 +278,9 @@ export const ImplantSliceCardsForm = forwardRef<
   useImperativeHandle(ref, () => ({ pendingCount, savePending }), [pendingCount, savePending]);
 
   async function handleClearTooth(implant: SurgicalImplantDto) {
+    if (!canDelete) return;
     const tooth = implant.toothPositionFdi ?? '';
-    if (!window.confirm(`Удалить срез зуба ${tooth || implant.implantNumber}?`)) return;
+    if (!(await confirmDelete(`Удалить срез зуба ${tooth || implant.implantNumber}?`))) return;
     setBusyTooth(tooth || String(implant.id));
     setError(null);
     try {
@@ -298,7 +303,9 @@ export const ImplantSliceCardsForm = forwardRef<
 
   return (
     <section className="card mb-6">
-      <h2 className="mb-1 font-semibold text-graphite">3. Карточки срезов имплантатов</h2>
+      <h2 className="mb-1 font-semibold text-graphite">
+        {heading ?? 'Карточки срезов имплантатов'}
+      </h2>
       <p className="mb-4 text-sm text-gray-600">
         {readOnly
           ? 'Этап закрыт: срезы доступны только для просмотра.'
@@ -371,7 +378,6 @@ export const ImplantSliceCardsForm = forwardRef<
                           <span className="sr-only">JPG для зуба {tooth}</span>
                           <input
                             type="file"
-                            accept=".jpg,.jpeg,image/jpeg"
                             className="block w-full text-[10px] file:mr-1 file:rounded file:border-0 file:bg-surface-muted file:px-1.5 file:py-1 file:text-[10px]"
                             disabled={inputsDisabled}
                             onClick={(e) => e.stopPropagation()}
@@ -416,7 +422,7 @@ export const ImplantSliceCardsForm = forwardRef<
                           >
                             Убрать из очереди
                           </button>
-                        ) : implant ? (
+                        ) : implant && canDelete ? (
                           <button
                             type="button"
                             className="btn-secondary mt-2 w-full !px-1 !py-0.5 text-[10px]"

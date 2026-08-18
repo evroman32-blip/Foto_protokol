@@ -39,7 +39,7 @@ function baseInput(over: Partial<StageCompletenessInput> = {}): StageCompletenes
 describe('StageCompletenessService', () => {
   const svc = new StageCompletenessService();
 
-  it('blocks when doctor confirmation missing on orthopedic stage', () => {
+  it('does not require a separate doctor confirmation — closing the stage is the confirmation', () => {
     const r = svc.evaluate(
       baseInput({
         doctorConfirmationPresent: false,
@@ -59,7 +59,8 @@ describe('StageCompletenessService', () => {
         ],
       }),
     );
-    expect(r.blockingReasons).toContain('Отсутствует подтверждение врача.');
+    expect(r.isComplete).toBe(true);
+    expect(r.blockingReasons).not.toContain('Отсутствует подтверждение врача.');
   });
 
   it('blocks when required photo missing', () => {
@@ -289,7 +290,7 @@ describe('StageCompletenessService', () => {
     expect(r.blockingReasons.some((b) => b.includes('primary ORTHOPEDIST'))).toBe(true);
   });
 
-  it('blocks surgical stage without implant registry', () => {
+  it('blocks surgical stage without any JPG slice in tooth forms', () => {
     const r = svc.evaluate(
       baseInput({
         stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
@@ -301,7 +302,44 @@ describe('StageCompletenessService', () => {
         surgeonConfirmation: null,
       }),
     );
-    expect(r.blockingReasons).toContain('Не создан реестр установленных имплантатов.');
+    expect(r.blockingReasons).toContain(
+      'Не загружен ни один JPG-срез имплантата (пустые окна зубов допустимы).',
+    );
+  });
+
+  it('ignores leftover implant registry without a slice and does not require tooth number', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'POSTOP_SURGICAL_RADIOLOGY_CONTROL',
+        ownerRole: 'SURGEON',
+        currentUserIsPrimaryOwner: true,
+        requirements: [],
+        radiologyStudies: [{ studyType: 'OPTG', status: 'READY' }],
+        implants: [
+          {
+            id: 'ghost',
+            implantLabel: 'IMP-01',
+            implantNumber: 1,
+            actualMethodCode: null,
+            status: 'DOCUMENTED',
+            attachments: [],
+          },
+          {
+            id: 'slice-18',
+            implantLabel: 'Зуб 18',
+            implantNumber: 18,
+            jawScope: 'UPPER',
+            toothPositionFdi: '18',
+            actualMethodCode: null,
+            status: 'DOCUMENTED',
+            attachments: [{ attachmentType: 'CT_CROSS_SECTION', surgeonConfirmed: true }],
+          },
+        ],
+        surgeonConfirmation: null,
+      }),
+    );
+    expect(r.blockingReasons.join(' ')).not.toMatch(/номер зуба|челюсть|хирург не подтвердил/i);
+    expect(r.isComplete).toBe(true);
   });
 
   it('blocks FIRST_PROTOTYPE without speech video', () => {
@@ -659,5 +697,178 @@ describe('StageCompletenessService', () => {
     expect(r.missingRequirements).not.toContain('IMP_SCAN_UPPER');
     expect(r.missingRequirements).not.toContain('IMP_SCAN_LOWER');
     expect(r.blockingReasons.some((b) => b.includes('Скан'))).toBe(false);
+  });
+
+  it('blocks mixed-type stage until a media branch is chosen', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'NEW_STAGE_1',
+        requirements: [
+          {
+            id: 'p',
+            code: 'NOVOE_POLOZHENIE_1',
+            name: 'Фото',
+            mediaType: 'PHOTO',
+            required: true,
+            minCount: 1,
+          },
+          {
+            id: 's',
+            code: 'NOVOE_POLOZHENIE_3',
+            name: 'Скан',
+            mediaType: 'STL',
+            required: true,
+            minCount: 1,
+          },
+        ],
+        mediaAssets: [],
+        mediaBranchMode: null,
+      }),
+    );
+    expect(r.blockingReasons).toContain('Не выбран вид информации для закрытия этапа.');
+    expect(r.blockingReasons.join(' ')).not.toMatch(/NOVOE_POLOZHENIE/);
+  });
+
+  it('requires only the selected media branch on a mixed-type stage', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'NEW_STAGE_1',
+        currentUserIsPrimaryOwner: true,
+        requirements: [
+          {
+            id: 'p',
+            code: 'NOVOE_POLOZHENIE_1',
+            name: 'Фото',
+            mediaType: 'PHOTO',
+            required: true,
+            minCount: 1,
+          },
+          {
+            id: 's',
+            code: 'NOVOE_POLOZHENIE_3',
+            name: 'Скан',
+            mediaType: 'STL',
+            required: true,
+            minCount: 1,
+          },
+        ],
+        mediaAssets: [
+          {
+            id: 'm1',
+            status: 'DOCTOR_CONFIRMED',
+            mediaType: 'PHOTO',
+            assignments: [
+              {
+                requirementCode: 'NOVOE_POLOZHENIE_1',
+                source: 'DOCTOR',
+                status: 'CONFIRMED',
+              },
+            ],
+          },
+        ],
+        mediaBranchMode: 'PHOTO',
+      }),
+    );
+    expect(r.isComplete).toBe(true);
+    expect(r.missingRequirements).not.toContain('NOVOE_POLOZHENIE_3');
+  });
+
+  it('requires every media type when ALL is selected', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'NEW_STAGE_1',
+        requirements: [
+          {
+            id: 'p',
+            code: 'NOVOE_POLOZHENIE_1',
+            name: 'Фото',
+            mediaType: 'PHOTO',
+            required: true,
+            minCount: 1,
+          },
+          {
+            id: 's',
+            code: 'NOVOE_POLOZHENIE_3',
+            name: 'Скан',
+            mediaType: 'STL',
+            required: true,
+            minCount: 1,
+          },
+        ],
+        mediaAssets: [
+          {
+            id: 'm1',
+            status: 'DOCTOR_CONFIRMED',
+            mediaType: 'PHOTO',
+            assignments: [
+              {
+                requirementCode: 'NOVOE_POLOZHENIE_1',
+                source: 'DOCTOR',
+                status: 'CONFIRMED',
+              },
+            ],
+          },
+        ],
+        mediaBranchMode: 'ALL',
+      }),
+    );
+    expect(r.isComplete).toBe(false);
+    expect(r.missingRequirements).toContain('NOVOE_POLOZHENIE_3');
+  });
+
+  it('requires implant slice cards on a custom stage with that protocol position', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'NEW_STAGE_2',
+        currentUserIsPrimaryOwner: true,
+        requirements: [
+          {
+            id: 's',
+            code: 'KARTOCHKI_SREZOV_IMPLANTATOV_JPG',
+            name: 'Карточки срезов имплантатов (JPG)',
+            mediaType: 'PHOTO',
+            required: true,
+            minCount: 1,
+          },
+        ],
+        mediaAssets: [],
+        implants: [],
+      }),
+    );
+    expect(r.blockingReasons).toContain(
+      'Не загружен ни один JPG-срез имплантата (пустые окна зубов допустимы).',
+    );
+    expect(r.blockingReasons.join(' ')).not.toMatch(/KARTOCHKI_SREZOV/);
+  });
+
+  it('closes a custom slice-card stage when at least one tooth window has a JPG', () => {
+    const r = svc.evaluate(
+      baseInput({
+        stageCode: 'NEW_STAGE_2',
+        currentUserIsPrimaryOwner: true,
+        requirements: [
+          {
+            id: 's',
+            code: 'KARTOCHKI_SREZOV_IMPLANTATOV_JPG',
+            name: 'Карточки срезов имплантатов (JPG)',
+            mediaType: 'PHOTO',
+            required: true,
+            minCount: 1,
+          },
+        ],
+        mediaAssets: [],
+        implants: [
+          {
+            id: 'i1',
+            implantLabel: '16',
+            implantNumber: 1,
+            actualMethodCode: null,
+            status: 'DOCUMENTED',
+            attachments: [{ attachmentType: 'CT_CROSS_SECTION', surgeonConfirmed: true }],
+          },
+        ],
+      }),
+    );
+    expect(r.isComplete).toBe(true);
   });
 });

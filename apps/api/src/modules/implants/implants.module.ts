@@ -8,11 +8,13 @@ import {
   ImplantSide,
   JawScope,
   SURGEON_RADIOLOGY_CONFIRMATION_TEXT,
+  isImplantSliceCardsRequirement,
 } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
 import { StageMediaAccessService } from '../../common/services/stage-media-access.service';
 import { AuditAction } from '../../common/decorators/metadata.decorators';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
+import { assertCanDelete } from '../../common/assert-can-delete';
 import { Module } from '@nestjs/common';
 
 function sideFromTooth(tooth?: string | null): ImplantSide {
@@ -184,6 +186,7 @@ export class ImplantsController {
   @Delete('implant-records/:id')
   @AuditAction('implant.delete')
   async remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    assertCanDelete(user);
     await this.stageAccess.assertCanMutateByImplantRecord(id, user);
     return this.prisma.surgicalImplantRecord.delete({ where: { id } });
   }
@@ -277,18 +280,23 @@ export class ImplantsController {
       },
     });
 
-    const sliceRi = await this.prisma.requirementInstance.findFirst({
+    const sliceCandidates = await this.prisma.requirementInstance.findMany({
       where: {
         stageInstanceId: implant.stageInstanceId,
-        mediaRequirement: { code: 'POSTOP_IMPLANT_SLICE_CARDS', isActive: true },
+        mediaRequirement: { isActive: true },
       },
-      select: { id: true },
+      include: { mediaRequirement: true },
     });
+    const sliceRi = sliceCandidates.find((ri) =>
+      isImplantSliceCardsRequirement(ri.mediaRequirement),
+    );
+    const sliceCode = sliceRi?.mediaRequirement.code ?? 'POSTOP_IMPLANT_SLICE_CARDS';
 
     const existingAsg = await this.prisma.mediaAssignment.findFirst({
       where: {
         mediaAssetId: dto.mediaAssetId,
         OR: [
+          { requirementCode: sliceCode },
           { requirementCode: 'POSTOP_IMPLANT_SLICE_CARDS' },
           ...(sliceRi ? [{ requirementInstanceId: sliceRi.id }] : []),
         ],
@@ -299,7 +307,7 @@ export class ImplantsController {
         data: {
           mediaAssetId: dto.mediaAssetId,
           requirementInstanceId: sliceRi?.id ?? null,
-          requirementCode: 'POSTOP_IMPLANT_SLICE_CARDS',
+          requirementCode: sliceCode,
           source: AssignmentSource.DOCTOR,
           status: AssignmentStatus.CONFIRMED,
           confirmedAt: new Date(),

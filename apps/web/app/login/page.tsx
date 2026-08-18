@@ -1,13 +1,12 @@
 'use client';
 
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { FormEvent, useState, Suspense } from 'react';
 
 import { BRAND } from '@/lib/constants';
 import { login } from '@/lib/auth';
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,8 +20,11 @@ function LoginForm() {
     try {
       await login(email, password);
       const from = searchParams.get('from') ?? '/dashboard';
-      router.push(from);
-      router.refresh();
+      const dest =
+        !from || from === '/' || from === '/home' || from === '/login' || from === '/register'
+          ? '/dashboard'
+          : from;
+      window.location.assign(dest);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка входа');
     } finally {
@@ -81,6 +83,11 @@ function LoginForm() {
             Нет аккаунта?{' '}
             <a href="/register" className="text-accent hover:underline">
               Регистрация
+            </a>
+          </p>
+          <p className="text-center text-sm text-gray-600">
+            <a href="/home" className="text-accent hover:underline">
+              На главную
             </a>
           </p>
         </form>
