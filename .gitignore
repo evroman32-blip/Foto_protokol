@@ -45,3 +45,6 @@ tools/next-build-*.txt
 tools/backups/
 tools/logs/
 tools/pgdata/
+
+# Вложенная копия репозитория (клон GitHub Desktop). Рабочий код — в этой папке, не внутри Foto_protokol/
+Foto_protokol/
