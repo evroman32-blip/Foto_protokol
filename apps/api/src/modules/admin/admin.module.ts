@@ -7,10 +7,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  StreamableFile,
   UseGuards,
   BadRequestException,
   ForbiddenException,
+  NotFoundException,
 } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import { ApiTags } from '@nestjs/swagger';
 import {
   IsBoolean,
@@ -33,6 +37,7 @@ import { Module } from '@nestjs/common';
 import { StagesModule } from '../stages/stages.module';
 import { StageTemplateSyncService } from '../stages/stage-template-sync.service';
 import { USER_ROLE_LABELS } from '../auth/auth.service';
+import { PdfReportService } from '../reports/pdf-report.service';
 
 /** Короткий код метода: M1A, M2, M10A */
 function parseShortMethodCode(raw: string): {
@@ -265,6 +270,7 @@ export class AdminController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly templateSync: StageTemplateSyncService,
+    private readonly pdf: PdfReportService,
   ) {}
 
   @Get('account-requests')
@@ -501,6 +507,60 @@ export class AdminController {
       include: { protocol: true },
     });
     return mapProtocolVersion(row);
+  }
+
+  @Get('protocols/:protocolId/versions/:versionId/pdf')
+  async downloadProtocolVersionPdf(
+    @Param('protocolId') protocolId: string,
+    @Param('versionId') versionId: string,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const row = await this.prisma.protocolVersion.findUnique({
+      where: { id: versionId },
+      include: {
+        protocol: true,
+        stageTemplates: {
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            mediaRequirements: { orderBy: { sortOrder: 'asc' } },
+          },
+        },
+      },
+    });
+    if (!row || row.protocolId !== protocolId) {
+      throw new NotFoundException('Версия протокола не найдена');
+    }
+
+    const protocolName = row.protocol?.name ?? 'Протокол';
+    const buffer = await this.pdf.generateProtocolSpecification({
+      protocolName,
+      version: row.version,
+      status: row.status,
+      stages: row.stageTemplates.map((stage) => ({
+        name: stage.name,
+        sortOrder: stage.sortOrder,
+        isActive: stage.isActive,
+        mediaRequirements: stage.mediaRequirements.map((req) => ({
+          name: req.name,
+          code: req.code,
+          mediaType: req.mediaType,
+          instruction: req.instruction,
+          description: req.description,
+          sortOrder: req.sortOrder,
+          isActive: req.isActive,
+          specialRule: req.specialRule,
+        })),
+      })),
+    });
+
+    const filename = this.pdf.protocolPdfFilename(protocolName, row.version);
+    const asciiName = filename.replace(/[^\x20-\x7E]/g, '_') || 'protocol.pdf';
+    const encoded = encodeURIComponent(filename);
+    res.header('Cache-Control', 'private, no-store');
+    return new StreamableFile(buffer, {
+      type: 'application/pdf',
+      disposition: `inline; filename="${asciiName}"; filename*=UTF-8''${encoded}`,
+    });
   }
 
   @Get('protocols/:protocolId/versions/:versionId')
@@ -994,5 +1054,6 @@ export class AdminController {
 @Module({
   imports: [StagesModule],
   controllers: [AdminController],
+  providers: [PdfReportService],
 })
 export class AdminModule {}

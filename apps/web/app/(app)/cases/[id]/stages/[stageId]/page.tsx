@@ -142,37 +142,10 @@ export default function StageDetailPage() {
     });
   }
 
-  function canDeleteAsset(asset: MediaAssetDto) {
-    const code = asset.requirementCode;
-    const riId = asset.assignments?.find((a) => a.status !== 'REJECTED')?.requirementInstanceId;
-    const siblings = assets.filter((a) => {
-      if (a.id === asset.id) return false;
-      return (a.assignments ?? []).some(
-        (asg) =>
-          asg.status !== 'REJECTED' &&
-          ((riId && asg.requirementInstanceId === riId) ||
-            (code && asg.requirementCode === code)),
-      );
-    });
-    const req = stage?.requirementInstances?.find(
-      (r) => r.id === riId || r.mediaRequirement.code === code,
-    )?.mediaRequirement;
-    const needed = req
-      ? Math.max(req.minCount || 0, req.required ? 1 : 0)
-      : 0;
-    return siblings.length >= needed;
-  }
-
   async function handleDelete(asset: MediaAssetDto) {
     if (!canDelete) return;
     const seq = Math.max(1, assets.findIndex((a) => a.id === asset.id) + 1);
     const title = assetTitle(asset, seq);
-    if (!canDeleteAsset(asset)) {
-      setError(
-        `Нельзя удалить «${title}»: это обязательный минимум для положения. Загрузите замену или оставьте файл.`,
-      );
-      return;
-    }
     if (!(await confirmDelete(`Удалить файл «${title}»?`))) return;
     setBusyMedia(true);
     setError(null);
@@ -383,7 +356,6 @@ export default function StageDetailPage() {
           <ul className="space-y-1 text-sm">
             {assets.map((asset, idx) => {
               const title = assetTitle(asset, idx + 1);
-              const deletable = canDeleteAsset(asset);
               return (
                 <li key={asset.id} className="flex items-center justify-between gap-3 border-b border-border py-2">
                   <button
@@ -397,12 +369,8 @@ export default function StageDetailPage() {
                     <button
                       type="button"
                       className="btn-secondary shrink-0 !px-2 !py-1 text-xs"
-                      disabled={busyMedia || !deletable}
-                      title={
-                        deletable
-                          ? 'Удалить файл'
-                          : 'Нельзя удалить: обязательный минимум для положения'
-                      }
+                      disabled={busyMedia}
+                      title="Удалить файл"
                       onClick={() => void handleDelete(asset)}
                     >
                       Удалить

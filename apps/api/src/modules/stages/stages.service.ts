@@ -20,8 +20,13 @@ import {
 } from '@mandarin/contracts';
 import { PrismaService } from '../../common/services/prisma.service';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
+import { assertCanDelete } from '../../common/assert-can-delete';
 import { StageCompletenessApiService } from './stage-completeness-api.service';
-import { StageTemplateSyncService } from './stage-template-sync.service';
+import {
+  liveRequirementInstanceWhere,
+  REQUIREMENT_INSTANCE_REMOVED,
+  StageTemplateSyncService,
+} from './stage-template-sync.service';
 
 @Injectable()
 export class StagesService {
@@ -39,7 +44,7 @@ export class StagesService {
       include: {
         stageTemplate: true,
         requirementInstances: {
-          where: { mediaRequirement: { isActive: true } },
+          where: liveRequirementInstanceWhere(),
           include: { mediaRequirement: true },
           orderBy: { mediaRequirement: { sortOrder: 'asc' } },
         },
@@ -168,7 +173,7 @@ export class StagesService {
       include: {
         stageTemplate: true,
         requirementInstances: {
-          where: { mediaRequirement: { isActive: true } },
+          where: liveRequirementInstanceWhere(),
           include: { mediaRequirement: true },
         },
       },
@@ -372,6 +377,58 @@ export class StagesService {
     await this.templateSync.ensureRequirementInstancesForStage(stageId);
 
     return { stageInstanceId: stageId, reason, reopenedBy: user.id };
+  }
+
+  async removeRequirementInstance(
+    stageId: string,
+    requirementInstanceId: string,
+    user: AuthUser,
+  ) {
+    assertCanDelete(user);
+    const ri = await this.prisma.requirementInstance.findUnique({
+      where: { id: requirementInstanceId },
+      include: { mediaRequirement: true },
+    });
+    if (!ri || ri.stageInstanceId !== stageId) {
+      throw new NotFoundException('Положение этапа не найдено');
+    }
+    if (ri.status === REQUIREMENT_INSTANCE_REMOVED) {
+      return { ok: true };
+    }
+
+    const assets = await this.prisma.mediaAsset.findMany({
+      where: {
+        stageInstanceId: stageId,
+        archivedAt: null,
+        assignments: {
+          some: {
+            status: { not: 'REJECTED' },
+            OR: [
+              { requirementInstanceId: ri.id },
+              { requirementCode: ri.mediaRequirement.code },
+            ],
+          },
+        },
+      },
+      select: { id: true },
+    });
+    const assetIds = assets.map((a) => a.id);
+    const now = new Date();
+    if (assetIds.length) {
+      await this.prisma.mediaAsset.updateMany({
+        where: { id: { in: assetIds } },
+        data: { archivedAt: now, status: 'REPLACED' },
+      });
+    }
+    await this.prisma.mediaAssignment.updateMany({
+      where: { requirementInstanceId: ri.id },
+      data: { requirementInstanceId: null },
+    });
+    await this.prisma.requirementInstance.update({
+      where: { id: ri.id },
+      data: { status: REQUIREMENT_INSTANCE_REMOVED },
+    });
+    return { ok: true, archivedAssetCount: assetIds.length };
   }
 
   private async ensureStarted(stageId: string, userId: string): Promise<void> {

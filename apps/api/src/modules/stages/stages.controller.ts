@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { ImpressionCaptureMode } from '@mandarin/contracts';
@@ -100,6 +100,17 @@ export class StagesController {
       );
     }
     return this.stagesService.setDesiredToothShade(stageId, user, shade);
+  }
+
+  @Delete(':stageId/requirement-instances/:requirementInstanceId')
+  @AuditAction('stage.requirement.remove')
+  @ApiOperation({ summary: 'Удалить положение из этапа (только модератор)' })
+  removeRequirementInstance(
+    @Param('stageId') stageId: string,
+    @Param('requirementInstanceId') requirementInstanceId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.stagesService.removeRequirementInstance(stageId, requirementInstanceId, user);
   }
 
   @Post(':stageId/confirm')

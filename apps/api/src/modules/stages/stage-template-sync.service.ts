@@ -4,6 +4,16 @@ import { PrismaService } from '../../common/services/prisma.service';
 
 const FROZEN_CASE_STATUSES: CaseStatus[] = [CaseStatus.COMPLETED, CaseStatus.ARCHIVED];
 
+/** Положение, которое модератор убрал из конкретного этапа. Sync не перезаписывает статус. */
+export const REQUIREMENT_INSTANCE_REMOVED = 'REMOVED';
+
+export function liveRequirementInstanceWhere() {
+  return {
+    status: { not: REQUIREMENT_INSTANCE_REMOVED },
+    mediaRequirement: { isActive: true },
+  };
+}
+
 /**
  * Держит этапы/положения случая в синхроне с активным шаблоном протокола.
  * Источник истины: StageTemplate + MediaRequirement.isActive.

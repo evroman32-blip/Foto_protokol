@@ -51,6 +51,20 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return res.json() as Promise<T>;
 }
 
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const utf = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf?.[1]) {
+    try {
+      return decodeURIComponent(utf[1]);
+    } catch {
+      /* keep fallback */
+    }
+  }
+  const plain = /filename="([^"]+)"/i.exec(header) ?? /filename=([^;]+)/i.exec(header);
+  return plain?.[1]?.trim() || fallback;
+}
+
 // --- Auth ---
 export interface AuthProfileDto {
   id: string;
@@ -377,6 +391,30 @@ export const adminApi = {
     normalizeProtocolVersion(
       await request<ProtocolVersionDto>(`/api/v1/admin/protocols/${protocolId}/versions/${versionId}`),
     ),
+  protocolVersionPdf: async (protocolId: string, versionId: string) => {
+    const authToken = typeof window !== 'undefined' ? getStoredToken() : null;
+    const res = await fetch(
+      `${API_BASE}/api/v1/admin/protocols/${protocolId}/versions/${versionId}/pdf`,
+      {
+        cache: 'no-store',
+        headers: {
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        credentials: 'include',
+      },
+    );
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => undefined);
+      const raw = (errBody as { message?: string | string[] })?.message;
+      const message = Array.isArray(raw) ? raw.join('; ') : raw ?? `HTTP ${res.status}`;
+      throw new ApiError(message, res.status, errBody);
+    }
+    const blob = await res.blob();
+    return {
+      blob,
+      filename: filenameFromContentDisposition(res.headers.get('content-disposition'), 'protocol.pdf'),
+    };
+  },
   updateStageTemplate: (id: string, data: Partial<StageTemplateAdminDto>) =>
     request<StageTemplateAdminDto>(`/api/v1/admin/stage-templates/${id}`, {
       method: 'PATCH',
@@ -713,6 +751,11 @@ export const stagesApi = {
     }),
   emergency: (id: string, data: { description: string }) =>
     request<{ id: string }>(`/api/v1/stages/${id}/emergency-events`, { method: 'POST', body: data }),
+  removeRequirementInstance: (stageId: string, requirementInstanceId: string) =>
+    request<{ ok: boolean; archivedAssetCount?: number }>(
+      `/api/v1/stages/${stageId}/requirement-instances/${requirementInstanceId}`,
+      { method: 'DELETE' },
+    ),
 };
 
 // --- Upload ---

@@ -329,26 +329,8 @@ export default function StageUploadPage() {
     setViewer({ assets: current, index });
   }
 
-  async function handleDeleteAsset(asset: MediaAssetDto, needed: number) {
+  async function handleDeleteAsset(asset: MediaAssetDto) {
     if (!canDelete) return;
-    const code =
-      asset.requirementCode ??
-      asset.assignments?.find((a) => a.status !== 'REJECTED')?.requirementCode ??
-      '';
-    const riId = asset.assignments?.find((a) => a.status !== 'REJECTED')?.requirementInstanceId;
-    const siblings = assets.filter((a) => {
-      if (a.id === asset.id) return false;
-      return (a.assignments ?? []).some(
-        (asg) =>
-          asg.status !== 'REJECTED' &&
-          ((riId && asg.requirementInstanceId === riId) ||
-            (code && asg.requirementCode === code)),
-      );
-    });
-    if (siblings.length < needed) {
-      setError('Нельзя удалить: останется меньше обязательного минимума для положения');
-      return;
-    }
     if (!(await confirmDelete('Удалить этот файл?'))) return;
     setBusy(true);
     setError(null);
@@ -778,7 +760,6 @@ export default function StageUploadPage() {
                   </div>
                   <ul className="space-y-1">
                     {currentAssets.map((asset, idx) => {
-                      const deletable = currentAssets.length - 1 >= needed;
                       return (
                         <li key={asset.id} className="flex items-center justify-between gap-2 text-xs">
                           <button
@@ -792,13 +773,9 @@ export default function StageUploadPage() {
                           <button
                             type="button"
                             className="text-accent underline-offset-2 hover:underline disabled:opacity-40"
-                            disabled={busy || stageLocked || !deletable}
-                            title={
-                              deletable
-                                ? 'Удалить этот файл'
-                                : 'Нельзя удалить: обязательный минимум'
-                            }
-                            onClick={() => void handleDeleteAsset(asset, needed)}
+                            disabled={busy}
+                            title="Удалить этот файл"
+                            onClick={() => void handleDeleteAsset(asset)}
                           >
                             Удалить
                           </button>
@@ -810,7 +787,7 @@ export default function StageUploadPage() {
                   <div className="text-xs text-gray-500">
                     {multiSlot
                       ? `Нужно файлов: ${needed}${maxCount != null ? ` (макс. ${maxCount})` : ''}. Новые добавляются к уже загруженным.`
-                      : 'Новый файл заменит предыдущий. Удаление — только если минимум сохраняется.'}
+                      : 'Новый файл заменит предыдущий.'}
                   </div>
                 </div>
               ) : null}

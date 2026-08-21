@@ -21,15 +21,15 @@ type JawScope = 'UPPER' | 'LOWER';
 type SectorDef = {
   id: number;
   title: string;
-  rows: string[][];
+  teeth: string[];
 };
 
 /** Порядок зубов Strategic Implant®: от 18 к 48 по секторам */
 export const FDI_TOOTH_ORDER = [
   '18', '17', '16', '15', '14', '13', '12', '11',
-  '28', '27', '26', '25', '24', '23', '22', '21',
-  '38', '37', '36', '35', '34', '33', '32', '31',
+  '21', '22', '23', '24', '25', '26', '27', '28',
   '48', '47', '46', '45', '44', '43', '42', '41',
+  '31', '32', '33', '34', '35', '36', '37', '38',
 ] as const;
 
 export function fdiSortRank(tooth: string | null | undefined): number {
@@ -42,37 +42,25 @@ const UPPER_SECTORS: SectorDef[] = [
   {
     id: 1,
     title: 'Сектор 1',
-    rows: [
-      ['18', '17', '16', '15'],
-      ['14', '13', '12', '11'],
-    ],
+    teeth: ['18', '17', '16', '15', '14', '13', '12', '11'],
   },
   {
     id: 2,
     title: 'Сектор 2',
-    rows: [
-      ['28', '27', '26', '25'],
-      ['24', '23', '22', '21'],
-    ],
+    teeth: ['21', '22', '23', '24', '25', '26', '27', '28'],
   },
 ];
 
 const LOWER_SECTORS: SectorDef[] = [
   {
-    id: 3,
-    title: 'Сектор 3',
-    rows: [
-      ['38', '37', '36', '35'],
-      ['34', '33', '32', '31'],
-    ],
-  },
-  {
     id: 4,
     title: 'Сектор 4',
-    rows: [
-      ['48', '47', '46', '45'],
-      ['44', '43', '42', '41'],
-    ],
+    teeth: ['48', '47', '46', '45', '44', '43', '42', '41'],
+  },
+  {
+    id: 3,
+    title: 'Сектор 3',
+    teeth: ['31', '32', '33', '34', '35', '36', '37', '38'],
   },
 ];
 
@@ -338,14 +326,12 @@ export const ImplantSliceCardsForm = forwardRef<
         оставить пустыми.
       </p>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-2 gap-4 overflow-x-auto">
         {sectors.map((sector) => (
-          <div key={sector.id} className="rounded border border-border bg-surface-muted/30 p-3">
+          <div key={sector.id} className="min-w-0 rounded border border-border bg-surface-muted/30 p-3">
             <h3 className="mb-3 text-sm font-semibold text-graphite">{sector.title}</h3>
-            <div className="grid gap-3">
-              {sector.rows.map((row) => (
-                <div key={row.join('-')} className="grid grid-cols-4 gap-2">
-                  {row.map((tooth) => {
+            <div className="grid grid-cols-8 gap-1.5">
+              {sector.teeth.map((tooth) => {
                     const implant = byTooth.get(tooth);
                     const busy = busyTooth === tooth;
                     const filled = Boolean(implant && hasConfirmedSlice(implant));
@@ -353,7 +339,7 @@ export const ImplantSliceCardsForm = forwardRef<
                     return (
                       <div
                         key={tooth}
-                        className={`rounded border p-2 transition-colors ${
+                        className={`rounded border p-1.5 transition-colors ${
                           staged
                             ? 'border-accent/50 bg-accent-light/40'
                             : filled
@@ -439,8 +425,6 @@ export const ImplantSliceCardsForm = forwardRef<
                       </div>
                     );
                   })}
-                </div>
-              ))}
             </div>
           </div>
         ))}

@@ -9,7 +9,10 @@ export function createAiClassifyProcessor() {
       include: {
         stageInstance: {
           include: {
-            requirementInstances: { include: { mediaRequirement: true } },
+            requirementInstances: {
+              include: { mediaRequirement: true },
+              where: { status: { not: 'REMOVED' } },
+            },
           },
         },
       },

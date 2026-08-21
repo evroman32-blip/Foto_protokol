@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 
 import { PageHeader } from '@/components/PageHeader';
+import { ProtocolPdfPreview } from '@/components/ProtocolPdfPreview';
 import { LoadingState } from '@/components/States';
 import {
   adminApi,
@@ -273,6 +274,10 @@ export default function ProtocolVersionPage() {
   const [showList, setShowList] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState<{ blob: Blob; filename: string; url: string } | null>(
+    null,
+  );
   const editRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(
@@ -297,6 +302,12 @@ export default function ProtocolVersionPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    return () => {
+      if (pdfPreview?.url) URL.revokeObjectURL(pdfPreview.url);
+    };
+  }, [pdfPreview?.url]);
 
   function hydrateStage(template: StageTemplateAdminDto) {
     const saved = [...(template.mediaRequirements ?? [])]
@@ -388,6 +399,35 @@ export default function ProtocolVersionPage() {
   const activeTemplate = templates.find((t) => t.id === activeStageId) ?? null;
   const existingItems = items.filter((i) => i.existingId);
   const newItems = items.filter((i) => !i.existingId);
+  const hasUnsavedChanges =
+    items.some((i) => i.dirty) ||
+    Boolean(
+      activeTemplate &&
+        (stageName.trim() !== activeTemplate.name || stageSortOrder !== activeTemplate.sortOrder),
+    );
+
+  async function generatePdf() {
+    if (hasUnsavedChanges) {
+      const ok = window.confirm(
+        'Есть несохранённые изменения. PDF будет сформирован по последней сохранённой версии протокола. Продолжить?',
+      );
+      if (!ok) return;
+    }
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const { blob, filename } = await adminApi.protocolVersionPdf(protocolId, versionId);
+      const url = URL.createObjectURL(blob);
+      setPdfPreview((prev) => {
+        if (prev?.url) URL.revokeObjectURL(prev.url);
+        return { blob, filename, url };
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось сформировать PDF');
+    } finally {
+      setPdfBusy(false);
+    }
+  }
   const positionNameCatalog = useMemo(
     () => mergePositionNameCatalog(items.map((item) => item.name)),
     [items],
@@ -532,6 +572,16 @@ export default function ProtocolVersionPage() {
     <div>
       <PageHeader
         title={version?.protocolName ?? 'Протокол'}
+        belowTitle={
+          <button
+            type="button"
+            className="btn-secondary !px-3 !py-1.5 text-sm"
+            disabled={pdfBusy || !version}
+            onClick={() => void generatePdf()}
+          >
+            {pdfBusy ? 'Формирование…' : 'Сформировать PDF'}
+          </button>
+        }
         description={`Версия ${version?.version ?? ''} · статус ${version?.status ?? ''} · активные положения шаблона сразу видны в загрузке открытых случаев; закрытые случаи не меняются`}
         actions={
           <div className="flex flex-col items-stretch gap-2 sm:items-end">
@@ -741,6 +791,17 @@ export default function ProtocolVersionPage() {
           );
         })}
       </div>
+      {pdfPreview ? (
+        <ProtocolPdfPreview
+          blob={pdfPreview.blob}
+          filename={pdfPreview.filename}
+          url={pdfPreview.url}
+          onClose={() => {
+            URL.revokeObjectURL(pdfPreview.url);
+            setPdfPreview(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

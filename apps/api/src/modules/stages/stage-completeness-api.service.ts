@@ -15,7 +15,7 @@ import {
 } from '@mandarin/contracts';
 import { getEnv, isStoma1cIntegrated } from '@mandarin/config';
 import { PrismaService } from '../../common/services/prisma.service';
-import { StageTemplateSyncService } from './stage-template-sync.service';
+import { StageTemplateSyncService, liveRequirementInstanceWhere } from './stage-template-sync.service';
 
 @Injectable()
 export class StageCompletenessApiService {
@@ -40,7 +40,7 @@ export class StageCompletenessApiService {
           },
         },
         requirementInstances: {
-          where: { mediaRequirement: { isActive: true } },
+          where: liveRequirementInstanceWhere(),
           include: {
             mediaRequirement: { include: { qualityProfile: true } },
           },

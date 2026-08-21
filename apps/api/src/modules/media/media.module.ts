@@ -366,44 +366,6 @@ export class MediaController {
       throw new NotFoundException('Файл не найден');
     }
 
-    const primary =
-      asset.assignments.find((a) => a.status !== 'REJECTED') ?? asset.assignments[0] ?? null;
-    const ri = primary?.requirementInstance;
-    const mr = ri?.mediaRequirement;
-
-    if (ri && mr) {
-      const effectivelyRequired = isMediaRequirementEffectivelyRequired({
-        stageCode: asset.stageInstance.stageTemplate.code,
-        impressionCaptureMode: asset.stageInstance.impressionCaptureMode,
-        code: mr.code,
-        templateRequired: mr.required,
-      });
-      const needed = Math.max(mr.minCount ?? 0, effectivelyRequired ? 1 : 0);
-      if (needed > 0) {
-        const siblings = await this.prisma.mediaAsset.findMany({
-          where: {
-            stageInstanceId: asset.stageInstanceId,
-            archivedAt: null,
-            id: { not: id },
-            assignments: {
-              some: {
-                status: { not: AssignmentStatus.REJECTED },
-                OR: [
-                  { requirementInstanceId: ri.id },
-                  { requirementCode: mr.code },
-                ],
-              },
-            },
-          },
-        });
-        if (siblings.length < needed) {
-          throw new BadRequestException(
-            `Нельзя удалить: для положения «${mr.name}» нужно минимум ${needed} файл(ов). Сначала загрузите замену или оставьте обязательный файл.`,
-          );
-        }
-      }
-    }
-
     return this.prisma.mediaAsset.update({
       where: { id },
       data: { archivedAt: new Date(), status: 'REPLACED' },
@@ -454,7 +416,10 @@ export class StageMediaController {
       include: {
         stageTemplate: true,
         requirementInstances: {
-          where: { mediaRequirement: { isActive: true } },
+          where: {
+            status: { not: 'REMOVED' },
+            mediaRequirement: { isActive: true },
+          },
           include: { mediaRequirement: true },
         },
         mediaAssets: {
